@@ -56,6 +56,7 @@ function respond(status, body) {
 export function mockMistralResponse(mode, request) {
   if (mode === '429') return respond(429, { object: 'error', message: 'Requests rate limit exceeded (mock)', type: 'rate_limited', code: '1300' });
   if (mode === 'error') return respond(500, { object: 'error', message: 'Mock failure', type: 'internal_error' });
+  if (request?.response_format?.json_schema?.name === 'prescription') return respond(200, mockPrescription(mode));
   const userMsg = (request?.messages || []).find((m) => m.role === 'user')?.content || '';
   const facts = JSON.parse(String(userMsg).replace(/^FACTS:\s*/, ''));
   const letter = compose(facts);
@@ -66,4 +67,22 @@ export function mockMistralResponse(mode, request) {
     choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
   });
+}
+
+/**
+ * Test-mode stand-in for reading a prescription photo. It cannot see the image, so it returns fixed
+ * sample values; the app labels them "sample values (test mode)" and asks the student to check them.
+ */
+function mockPrescription(mode) {
+  const today = new Date();
+  const visit = new Date(today.getTime() - 5 * 86400000).toISOString().slice(0, 10);
+  const details = mode === 'garbage' ? '{"isPrescription": tr' : JSON.stringify({
+    isPrescription: true, legibility: 'partial', patientName: 'Aarav Patil', patientAge: '20', patientSex: 'M',
+    visitDate: visit, doctorName: '', clinicName: '', complaints: ['high fever', 'body ache', 'headache'],
+    diagnosis: 'viral fever', restDays: 4, advice: 'Rest for 4 days'
+  });
+  return {
+    id: 'mock-reader', object: 'chat.completion', model: 'mock-reader',
+    choices: [{ index: 0, message: { role: 'assistant', content: details }, finish_reason: 'stop' }]
+  };
 }

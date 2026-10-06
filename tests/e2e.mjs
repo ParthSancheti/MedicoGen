@@ -190,6 +190,39 @@ try {
   await page.getByRole('button', { name: 'Done' }).click();
   await page.waitForTimeout(400);
 
+  // letter from prescription: upload → review → prefilled wizard (reading is free)
+  await page.goto(BASE + '#/home');
+  await page.waitForSelector('.allowance-card');
+  await page.getByRole('button', { name: /Letter from prescription/ }).click();
+  await page.waitForSelector('.scan-drop');
+  await shot(page, '14a-scan');
+  await page.locator('.scan input[type=file]').setInputFiles('assets/brand/logo-full.png');
+  await page.waitForSelector('.rx-card');
+  assert(await page.locator('.notice.warn', { hasText: 'Test mode' }).count() === 1, 'mock reader is labelled as test mode');
+  await shot(page, '14b-scan-result');
+  // someone else's prescription: blocked until the student confirms it is theirs
+  const realName = await page.evaluate(() => JSON.parse(localStorage.getItem('mg.profile')).name);
+  await page.evaluate(() => { const p = JSON.parse(localStorage.getItem('mg.profile')); p.name = 'Riya Sharma'; localStorage.setItem('mg.profile', JSON.stringify(p)); });
+  await page.locator('.scan input[type=file]').setInputFiles('assets/brand/logo-full.png');
+  await page.waitForSelector('.rx-card .rx-row');
+  await page.waitForSelector('.notice.danger');
+  assert(await page.getByRole('button', { name: 'Continue to my letter' }).isDisabled(), 'mismatched name blocks continuing');
+  await shot(page, '14c-scan-mismatch');
+  await page.evaluate((n) => { const p = JSON.parse(localStorage.getItem('mg.profile')); p.name = n; localStorage.setItem('mg.profile', JSON.stringify(p)); }, realName);
+  await page.locator('.scan input[type=file]').setInputFiles('assets/brand/logo-full.png');
+  await page.waitForFunction(() => !document.querySelector('.notice.danger') && document.querySelector('.rx-card'));
+  await page.getByRole('button', { name: 'Continue to my letter' }).click();
+  await page.waitForSelector('.wizard h1');
+  const rx = await page.evaluate(() => JSON.parse(localStorage.getItem('mg.draft')).data);
+  assert(rx.absence.reason.startsWith('I had high fever, body ache and headache and the doctor advised me to rest for 4 days'), 'reason from prescription: ' + rx.absence.reason);
+  assert(rx.absence.from && rx.absence.to > rx.absence.from && rx.absence.documents === true && rx.fromRx.source === 'mock', 'dates and attachment prefilled');
+  assert((await page.textContent('#allowance')).includes('2 left'), 'reading a prescription is free');
+  await tapContinue(page); await tapContinue(page);
+  await page.waitForSelector('.notice', { hasText: 'Test mode' });
+  await shot(page, '14d-scan-wizard');
+  log('prescription read, wizard prefilled, no generation spent');
+  await page.evaluate(() => localStorage.removeItem('mg.draft'));
+
   // demo template
   await page.goto(BASE + '#/home');
   await page.waitForSelector('.allowance-card');

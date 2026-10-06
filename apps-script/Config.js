@@ -19,6 +19,7 @@ var MG_DEFAULTS = {
   PRICE_INR: 49,                     // shown to students; payment itself is verified by an admin
   MISTRAL_MODEL: 'mistral-small-latest',          // primary model, strict JSON schema
   MISTRAL_FALLBACK_MODEL: 'open-mistral-nemo',     // second try (json_object mode) before the offline letter
+  MISTRAL_VISION_MODEL: 'mistral-small-latest',   // reads prescription photos (Mistral Small 3.1+ accepts images)
   AI_COOLDOWN_SEC: 60,               // after a 429 we stop calling Mistral for this long
   WHATSAPP_PROVIDER: 'link',         // 'link' (prefilled wa.me link for the admin) | 'cloud_api'
   ADMIN_SESSION_HOURS: 6,

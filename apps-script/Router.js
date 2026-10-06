@@ -12,6 +12,7 @@ var ROUTES_ = {
   'access.request':       { fn: apiSubmitRequest_ },
   'access.requestStatus': { fn: apiRequestStatus_ },
   'letter.generate':      { fn: apiGenerateLetter_ },
+  'prescription.read':    { fn: apiReadPrescription_ },
   'demo.create':          { fn: apiCreateDemo_ },
   'generation.get':       { fn: apiGetGeneration_ },
   'document.save':        { fn: apiSaveDocument_ },

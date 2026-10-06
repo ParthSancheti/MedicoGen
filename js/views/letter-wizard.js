@@ -44,9 +44,10 @@ const PHRASES = {
   other: ['due to unavoidable personal reasons']
 };
 
-export function render(root, { navigate }) {
+/** A fresh letter draft, pre-filled from the student's saved profile. */
+export function newLetterDraft() {
   const profile = session.profile;
-  const initial = {
+  return {
     letterType: 'absence',
     date: todayIso(),
     tone: 'formal',
@@ -56,6 +57,10 @@ export function render(root, { navigate }) {
     absence: { from: '', to: '', reasonCategory: '', reason: '', documents: false },
     recipient: { name: profile.hodName || '', designation: profile.designation || 'Head of Department', salutation: profile.salutation || 'Sir' }
   };
+}
+
+export function render(root, { navigate }) {
+  const initial = newLetterDraft();
 
   const steps = [
     {
@@ -129,6 +134,10 @@ export function render(root, { navigate }) {
         const docs = h('input', { type: 'checkbox', checked: d.absence.documents, style: { width: '22px', height: '22px', accentColor: 'var(--accent)' } });
         docs.addEventListener('change', () => { d.absence.documents = docs.checked; ui.changed(); haptic('select'); });
         return h('div.stack',
+          d.fromRx ? h('div.notice' + (d.fromRx.source === 'mock' ? '.warn' : ''), iconEl('scan', 18), h('span',
+            d.fromRx.source === 'mock'
+              ? 'Test mode: these are sample values, not read from your photo. Change them to match your prescription.'
+              : 'Filled in from your prescription. Check the dates and reason, and correct anything that was misread.')) : null,
           h('div.grid-2',
             h('div.field', h('label', 'From'), from, ui.error('absence.from')),
             h('div.field', h('label', 'To'), to, ui.error('absence.to'))),

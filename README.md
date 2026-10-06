@@ -71,6 +71,24 @@ Each tone changes the system prompt and the built-in letter. The prompt receives
 
 ---
 
+### Letter from a prescription (home screen: "Letter from prescription")
+1. **Photo.** The student photographs the prescription their doctor actually gave them. The app shrinks it to at most 1600 px as a JPEG (about 300 KB).
+2. **Read.** `prescription.read` (`apps-script/Prescriptions.js`) sends the photo to Mistral's vision model (`MISTRAL_VISION_MODEL`, default `mistral-small-latest`) with a strict JSON schema: patient, age/sex, visit date, symptoms in plain words, written diagnosis, days of rest advised, doctor/clinic.
+   - The model is told to transcribe only, never guess. Unreadable fields come back empty and are validated again on the server.
+3. **Check.** The student sees what was found. Anything missing is marked "we'll ask you".
+   - If the patient name doesn't match the student's name, continuing is blocked until they confirm it is theirs.
+4. **Write.** The normal letter wizard opens pre-filled:
+   - the dates (visit date + rest days);
+   - the reason in plain words, e.g. "I had high fever and body ache and the doctor advised me to rest for 4 days";
+   - "documents attached" ticked.
+   The student checks every step, and only the final "Write my letter" spends a generation.
+
+**Limits and privacy:**
+- Reading is free but limited to 10 photos per code every 6 hours.
+- The photo goes to Mistral only. It is never stored in Sheets, Drive or the event log.
+
+**Test mode:** in mock mode without a key, the reader can't see the photo. It returns fixed sample values, and the app says so on both the result and the wizard.
+
 ## Do we need Google Apps Script, or is the website alone enough?
 
 **The website alone is not enough.** A static website runs entirely in the student's browser, and anything a browser stores or decides can be edited by that student. Without a server:
@@ -92,7 +110,7 @@ Mock mode is the one exception: it deliberately runs the backend in the browser 
 
 ### 1. Apps Script backend
 1. Create a new Apps Script project (script.google.com).
-2. Copy every file from `apps-script/` into it (`.js` → `.gs`, or use `clasp push`). Include `appsscript.json`.
+2. Copy every file from `apps-script/` into it (`.js` → `.gs`, or use `clasp push`), including `Prescriptions.js`. Include `appsscript.json`.
 3. **Project Settings → Script Properties**, add:
    | Property | Required | Notes |
    |---|---|---|
@@ -216,7 +234,7 @@ tools/                  dev server (+ Mistral proxy), template background builde
   - token accounting, idempotency, the two-model fallback chain, fact guard
   - referral rules, admin operations
   - metric typography, glyph-level humanizer, pagination without shrinking, preview/PDF parity
-  - All of this runs the real backend code in mock mode, with 34 Node tests and two browser walkthroughs.
+  - All of this runs the real backend code in mock mode, with 37 Node tests and two browser walkthroughs.
   - Generation source is labelled honestly in the studio: **Written by AI** (Mistral), **Mock AI (test mode)** or **Standard letter** (fallback).
 - **Written to Mistral's documented API but not called live from this build environment** (its network blocks api.mistral.ai): the real Mistral request. Test it with your key via `.env` + `npm run dev`, or after deploying.
 - **Not executed against Google here:** the Apps Script deployment itself, and the WhatsApp Cloud API path.

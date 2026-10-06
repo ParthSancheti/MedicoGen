@@ -251,3 +251,29 @@ test('generation source is honest: mock, fallback (no key / quota)', () => {
   assert.equal(boot({ MISTRAL_API_KEY: '' }).call('letter.generate', { code: 'MG-TEST-001', generationId: gid(), input: letterInput() }).data.generation.source, 'fallback');
   assert.equal(boot({ MOCK_AI: '429' }).call('letter.generate', { code: 'MG-TEST-001', generationId: gid(), input: letterInput() }).data.generation.source, 'fallback');
 });
+
+test('reading a prescription is free, honest about test mode, validated and rate-limited', () => {
+  const { call, state } = boot();
+  const image = 'data:image/png;base64,' + PNG_1PX;
+  const r = call('prescription.read', { code: 'MG-TEST-001', image });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.data.source, 'mock', 'the mock reader is labelled as test mode');
+  assert.equal(r.data.details.restDays, 4);
+  assert.deepEqual(r.data.details.complaints, ['high fever', 'body ache', 'headache']);
+  assert.equal(call('access.validate', { code: 'MG-TEST-001' }).data.token.remaining, 3, 'no generation spent');
+  // the photo itself is never stored
+  assert.ok(!JSON.stringify(state).includes(PNG_1PX), 'image not persisted anywhere');
+
+  assert.equal(call('prescription.read', { code: 'MG-NOPE-0000', image }).error.code, 'CODE_INVALID');
+  assert.equal(call('prescription.read', { code: 'MG-TEST-001', image: 'data:text/html;base64,PGI+' }).error.code, 'VALIDATION');
+  for (let i = 0; i < 9; i++) call('prescription.read', { code: 'MG-TEST-001', image });
+  assert.equal(call('prescription.read', { code: 'MG-TEST-001', image }).error.code, 'RATE_LIMITED');
+});
+
+test('prescription reading without a key or on bad AI output fails cleanly (never invents details)', () => {
+  const image = 'data:image/png;base64,' + PNG_1PX;
+  assert.equal(boot({ MISTRAL_API_KEY: '' }).call('prescription.read', { code: 'MG-TEST-001', image }).error.code, 'AI_UNAVAILABLE');
+  assert.equal(boot({ MOCK_AI: 'garbage' }).call('prescription.read', { code: 'MG-TEST-001', image }).error.code, 'AI_UNAVAILABLE');
+  const busy = boot({ MOCK_AI: '429' });
+  assert.equal(busy.call('prescription.read', { code: 'MG-TEST-001', image }).error.code, 'AI_BUSY');
+});
