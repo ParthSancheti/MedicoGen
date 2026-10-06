@@ -125,18 +125,25 @@ The admin console works on phone (bottom tabs, cards) and desktop (sidebar, dens
 - **No silent fallback.** A missing font fails loudly rather than quietly switching to Helvetica.
 
 **Paper × handwriting.**
-- **5 papers:** Classmate, Black Margin, Legal Pad, Cream, Plain A4.
-- **10 writing styles:** 7 handwriting fonts plus 3 print fonts.
-- The student's paper and handwriting choices are saved with the document.
+- **12 page formats:** Classmate, Narrow ruled, Wide ruled, Register (Date/Page box), Black Margin, Exam sheet, Legal Pad, Recycled, Graph (4 mm), Dot grid, Cream, Plain A4.
+- **18 writing styles:** 11 print-style hands (Handlee, Kalam, Patrick Hand, Caveat, Mynerve, Covered By Your Grace, Architects Daughter, Shadows Into Light, Gochi Hand, Schoolbell, Indie Flower), 4 cursive hands (Dawning of a New Day, Cedarville, Nothing You Could Do, Homemade Apple), and 3 print fonts. Fonts are SIL OFL, except Homemade Apple (Apache 2.0); licences are in `assets/fonts/`.
+- **Every handwriting font is sized from its own measured letter height** relative to the line spacing, so all hands sit on the rules the same way.
+- The student's paper, handwriting and fine-tune settings are saved with the document.
 
-**Human handwriting (`js/doc/handwriting.js`).** Every letter is placed separately, with per-word and per-glyph variation:
+**Consistent lines, always.** Every page is a fixed baseline grid: text sits on lines exactly *line spacing* mm apart, and the text size never changes. Nothing is shrunk to squeeze a long letter onto one page; it continues on page 2 with identical spacing. Handwriting variation is centred, so every line holds a similar amount of text. A test checks short and long letters on several papers for this.
+
+**Fine-tune (gear icon).** The gear appears on the selected handwriting or paper card in the wizard, and as *Fine-tune* in the studio. It opens a sheet over a blurred background, with a live preview of the real page. It is free and is saved with the document.
+- *Writing:* size, letter height, letter width, letter spacing, word spacing, slant, pen thickness, ink colour.
+- *Humanizer:* Neat / Natural / Rushed presets, letter wobble, word variation, baseline drift, slant variation, ink pressure, margin drift, retraced strokes, number of crossed-out corrections (0–6), and a variation seed ("Write it differently").
+- *Page:* line spacing, first-line position, left and right margins, paragraph indent, section gap, signature space, alignment.
+
+**Human handwriting (`js/doc/handwriting.js`).** Every letter is placed separately with its own transform (height, width, slant, rotation). The same matrix is used by the SVG preview and the PDF, which writes it with raw PDF operators so it can also stroke the pen. The variation comes per word and per glyph:
 - **Glyph shape:** size, rotation and slant, so no two "e"s match.
 - **Ink:** pressure changes, and occasional retraced strokes.
-- **Lines:** a slowly wandering baseline and slope, and a ragged left margin.
-- **Fatigue:** the writing gets looser further down the page.
+- **Lines:** a gentle baseline drift that stays on the ruled line (±0.35 mm at most), and a ragged left margin.
 - **Real slips:** a word written wrong (swapped or dropped letters, or an abandoned half-word), struck through, then rewritten correctly.
 
-All of it is seeded per document, so the preview and the PDF are identical. In the studio, **Neat / Natural / Rushed** controls how strong the effect is; Neat has no slips. Facts (names, dates, numbers) are never "misspelled".
+All of it is seeded per document, so the preview and the PDF are identical. In the studio, **Neat / Natural / Rushed** sets how strong the effect is, and Fine-tune adjusts each part separately; Neat has no slips. Facts (names, dates, numbers) are never "misspelled".
 
 **Demo templates.** Fields come from a millimetre manifest (`js/doc/templates.js`). The fictional backgrounds are generated from it (`node tools/build-templates.mjs`). Every page always carries the SAMPLE marking. There are no signatures, seals, registration numbers or practitioner identities.
 
@@ -161,6 +168,6 @@ tools/                  dev server (+ Mistral proxy), template background builde
   - wizard, five-tone prompt, handwriting engine, PDF export with embedded fonts
   - token accounting, idempotency, the two-model fallback chain, fact guard
   - referral rules, admin operations
-  - All of this runs the real backend code in mock mode, with 34 unit tests and two browser walkthroughs.
+  - All of this runs the real backend code in mock mode, with 52 unit tests and two browser walkthroughs.
 - **Written to Mistral's documented API but not called live from this build environment** (its network blocks api.mistral.ai): the real Mistral request. Test it with your key via `.env` + `npm run dev`, or after deploying.
 - **Not executed against Google here:** the Apps Script deployment itself, and the WhatsApp Cloud API path.

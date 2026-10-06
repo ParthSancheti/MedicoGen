@@ -3,7 +3,7 @@
  */
 import { FontRegistry } from './fonts.js';
 import { styleFonts, WRITING_ORDER } from './styles.js';
-import { layoutLetter } from './letter-layout.js';
+import { layoutLetter, paperFonts } from './letter-layout.js';
 import { layoutTemplate, templateFonts } from './template-layout.js';
 import { TEMPLATES } from './templates.js';
 import { pageToSvg } from './render-svg.js';
@@ -53,7 +53,7 @@ export async function getRegistry() {
 
 export function fontsFor(doc) {
   if (doc.style && !doc.paper) migrateStyle(doc);
-  return doc.kind === 'demo' ? templateFonts() : styleFonts(doc.writing || 'kalam');
+  return doc.kind === 'demo' ? templateFonts() : styleFonts(doc.writing || 'handlee').concat(paperFonts(doc.paper || 'classmate'));
 }
 
 function migrateStyle(doc) {
@@ -71,7 +71,7 @@ export async function layoutDocument(doc, { dev = false } = {}) {
   const reg = await getRegistry();
   await reg.ensure(fontsFor(doc));
   if (doc.kind === 'demo') return layoutTemplate({ templateId: doc.templateId, fields: doc.fields || {}, registry: reg, dev });
-  return layoutLetter({ input: doc.input, content: doc.content, paperId: doc.paper || 'classmate', writingId: doc.writing || 'kalam', registry: reg, seed: doc.id || 'preview', humanize: doc.humanize || 'natural' });
+  return layoutLetter({ input: doc.input, content: doc.content, paperId: doc.paper || 'classmate', writingId: doc.writing || 'handlee', registry: reg, seed: doc.id || 'preview', settings: doc.settings || null, humanize: doc.humanize });
 }
 
 export function pagesToSvg(pages, opts) {

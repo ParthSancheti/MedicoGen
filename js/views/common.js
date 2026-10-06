@@ -45,7 +45,7 @@ export function docItem(gen, onOpen) {
 /** Converts a backend generation into the engine's document model. */
 export function toDoc(gen) {
   if (gen.kind === 'demo') return { kind: 'demo', id: gen.id, templateId: gen.content.templateId, fields: gen.content.fields || {} };
-  return { kind: 'letter', id: gen.id, paper: gen.paper, writing: gen.writing, style: gen.style, input: gen.input, content: gen.content };
+  return { kind: 'letter', id: gen.id, paper: gen.paper, writing: gen.writing, style: gen.style, settings: gen.settings || null, input: gen.input, content: gen.content };
 }
 
 export function emptyState(iconName, title, text, action) {

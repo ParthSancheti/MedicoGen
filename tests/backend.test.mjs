@@ -213,3 +213,17 @@ test('paper and handwriting choices persist', () => {
   assert.equal(g.paper, 'legal');
   assert.equal(g.writing, 'patrick');
 });
+
+test('precision settings are clamped and persisted, and are free to change', () => {
+  const { call } = boot();
+  const id = gid();
+  const r = call('letter.generate', { code: 'MG-TEST-001', generationId: id, input: letterInput(), paper: 'graph', writing: 'mynerve',
+    settings: { font: { height: 9, ink: '#0B2FA0', evil: 1 }, human: { errors: 3, preset: 'rushed' }, page: { lineGap: 8.2 }, extra: { x: 1 } } });
+  assert.deepEqual(r.data.generation.settings, { font: { height: 1.5, ink: '#0b2fa0' }, human: { errors: 3, preset: 'rushed' }, page: { lineGap: 8.2 } });
+  call('document.save', { code: 'MG-TEST-001', generationId: id, settings: { font: { slant: 6 }, human: { preset: 'neat' }, page: {} } });
+  const g = call('generation.get', { code: 'MG-TEST-001', generationId: id }).data;
+  assert.equal(g.generation.settings.font.slant, 6);
+  assert.equal(g.generation.settings.human.preset, 'neat');
+  assert.equal(g.generation.paper, 'graph');
+  assert.equal(g.token.remaining, 2);
+});

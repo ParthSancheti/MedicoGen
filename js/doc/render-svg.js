@@ -6,6 +6,7 @@
  */
 import { FONT_FILES, PT } from './fonts.js';
 import { escapeXml } from './text.js';
+import { svgMatrix, hasTransform } from './matrix.js';
 
 const r = (n) => Math.round(n * 1000) / 1000;
 
@@ -25,20 +26,23 @@ export function pageToSvg(page, { className = 'doc-page', interactive = false } 
       case 'text': {
         const meta = FONT_FILES[it.f];
         const size = it.size * PT;
-        const fit = it.s.length > 1 && it.w > 0 ? ` textLength="${r(it.w)}" lengthAdjust="spacing"` : '';
-        // Same text matrix pdf-lib builds (rotate + ySkew), mirrored into y-down SVG space, so glyph
-        // rotation and slant are identical in preview and PDF.
+        const fit = it.s.length > 1 && it.w > 0 ? ` textLength="${r(it.w / (it.sx || 1))}" lengthAdjust="spacing"` : '';
+        // Same glyph matrix as the PDF exporter (scale → slant → rotation), see matrix.js.
         let rot = '';
-        if (it.rot || it.skew) {
-          const a = ((it.rot || 0) * Math.PI) / 180, k = Math.tan(((it.skew || 0) * Math.PI) / 180);
-          const m = [Math.cos(a), Math.sin(a), -Math.sin(a) - k, Math.cos(a)].map((v) => Math.round(v * 1e5) / 1e5);
-          rot = ` transform="matrix(${m.join(' ')} ${r(it.x)} ${r(it.y)}) translate(${r(-it.x)} ${r(-it.y)})"`;
+        let x = it.x, y = it.y;
+        if (hasTransform(it)) {
+          rot = ` transform="matrix(${svgMatrix(it).join(' ')} ${r(it.x)} ${r(it.y)})"`;
+          x = 0; y = 0;
         }
+        const pen = it.stroke ? ` stroke="${it.color}" stroke-width="${r(it.stroke)}" stroke-linejoin="round"${it.opacity != null ? ` stroke-opacity="${it.opacity}"` : ''}` : '';
         const op = it.opacity != null ? ` fill-opacity="${it.opacity}"` : '';
         const data = interactive && it.b ? ` data-block="${escapeXml(it.b)}"` : '';
-        parts.push(`<text x="${r(it.x)}" y="${r(it.y)}" font-family="'${meta.family}'" font-weight="${meta.weight}" font-size="${r(size)}" fill="${it.color}"${op}${fit}${rot}${data}>${escapeXml(it.s)}</text>`);
+        parts.push(`<text x="${r(x)}" y="${r(y)}" font-family="'${meta.family}'" font-weight="${meta.weight}" font-size="${r(size)}" fill="${it.color}"${op}${pen}${fit}${rot}${data}>${escapeXml(it.s)}</text>`);
         break;
       }
+      case 'dot':
+        parts.push(`<circle cx="${r(it.x)}" cy="${r(it.y)}" r="${r(it.r)}" fill="${it.fill}"/>`);
+        break;
       case 'box': // developer overlay only (template inspector)
         parts.push(`<rect class="dev-box" data-field="${escapeXml(it.id)}" x="${r(it.x)}" y="${r(it.y)}" width="${r(it.w)}" height="${r(it.h)}" fill="rgba(11,99,206,.08)" stroke="#0b63ce" stroke-width="0.25" stroke-dasharray="1 0.6"/>`);
         break;

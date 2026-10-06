@@ -4,6 +4,8 @@
  * to a font that is not loaded, export fails loudly — there is no silent fallback to a standard
  * PDF font.
  */
+import { glyphMatrix, hasTransform } from './matrix.js';
+
 const MM = 72 / 25.4;
 
 function hexToRgb(PDFLib, hex) {
@@ -66,19 +68,39 @@ export async function renderPdf({ pages, registry, PDFLib, fontkit, loadImage, m
           images[it.href] = /\.png($|\?)/i.test(it.href) ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
         }
         pdfPage.drawImage(images[it.href], { x: it.x * MM, y: H - (it.y + it.h) * MM, width: it.w * MM, height: it.h * MM });
+      } else if (it.t === 'dot') {
+        pdfPage.drawCircle({ x: it.x * MM, y: H - it.y * MM, size: it.r * MM, color: hexToRgb(PDFLib, it.fill) });
       } else if (it.t === 'text') {
-        pdfPage.drawText(it.s, {
-          x: it.x * MM,
-          y: H - it.y * MM,
-          size: it.size,
-          font: embedded[it.f],
-          color: hexToRgb(PDFLib, it.color),
-          opacity: it.opacity != null ? it.opacity : 1,
-          rotate: PDFLib.degrees(-(it.rot || 0)),
-          ySkew: PDFLib.degrees(it.skew || 0) // leans glyph verticals forward (xSkew would tilt the baseline)
-        });
+        if (!hasTransform(it) && !it.stroke) {
+          pdfPage.drawText(it.s, { x: it.x * MM, y: H - it.y * MM, size: it.size, font: embedded[it.f], color: hexToRgb(PDFLib, it.color), opacity: it.opacity != null ? it.opacity : 1 });
+        } else {
+          drawGlyphRun(PDFLib, pdfPage, embedded[it.f], it, H);
+        }
       }
     }
   }
   return doc.save();
+}
+
+/**
+ * Text with the shared glyph matrix (scale → slant → rotation) and an optional pen stroke, written
+ * with raw PDF operators so it matches the SVG preview exactly (pdf-lib's drawText cannot scale
+ * glyphs or stroke them).
+ */
+function drawGlyphRun(PDFLib, page, font, it, H) {
+  const P = PDFLib;
+  const [a, b, c, d] = glyphMatrix(it);
+  const key = page.node.newFontDictionary(font.name, font.ref);
+  const op = it.opacity != null ? it.opacity : 1;
+  const gs = op < 1 ? page.maybeEmbedGraphicsState({ opacity: op, borderOpacity: op }) : undefined;
+  const col = hexToRgb(P, it.color);
+  const ops = [P.pushGraphicsState()];
+  if (gs) ops.push(P.setGraphicsState(gs));
+  ops.push(P.beginText(), P.setFillingColor(col));
+  if (it.stroke) {
+    ops.push(P.setStrokingColor(col), P.setLineWidth(it.stroke * MM), P.setLineJoin(P.LineJoinStyle.Round),
+      P.setTextRenderingMode(P.TextRenderingMode.FillAndOutline));
+  }
+  ops.push(P.setFontAndSize(key, it.size), P.setTextMatrix(a, b, c, d, it.x * MM, H - it.y * MM), P.showText(font.encodeText(it.s)), P.endText(), P.popGraphicsState());
+  page.pushOperators(...ops);
 }

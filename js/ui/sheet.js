@@ -8,7 +8,7 @@ import { haptic } from '../core/haptics.js';
 
 const stack = [];
 
-export function openSheet({ title, content, onClose, dismissible = true, size = 'md', label }) {
+export function openSheet({ title, content, onClose, dismissible = true, size = 'md', label, blur = false }) {
   const body = h('div.sheet-body');
   const titleEl = title ? h('h2.sheet-title', { id: 'sheet-t-' + stack.length }, title) : null;
   const closeBtn = dismissible ? h('button.icon-btn.sheet-close', { type: 'button', 'aria-label': 'Close', onclick: () => close() }, iconEl('close', 20)) : null;
@@ -19,7 +19,7 @@ export function openSheet({ title, content, onClose, dismissible = true, size = 
   (titleEl || closeBtn) ? h('div.sheet-head', titleEl || h('span'), closeBtn) : null,
   body);
   const scrim = h('div.sheet-scrim', { onclick: () => dismissible && close() });
-  const root = h('div.sheet-root', scrim, panel);
+  const root = h('div.sheet-root' + (blur ? '.blur' : ''), scrim, panel);
   document.body.append(root);
 
   const app = document.getElementById('app');

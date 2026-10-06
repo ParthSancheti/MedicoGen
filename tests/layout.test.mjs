@@ -64,15 +64,40 @@ test('handwriting is deterministic, varied, and contains struck-through slips', 
   const b = layoutLetter({ input: SAMPLE_INPUT, content: SAMPLE_CONTENT, paperId: 'classmate', writingId: 'handlee', registry: reg, seed: 'x' });
   assert.deepEqual(a.pages, b.pages, 'same seed, same marks (preview == PDF)');
   const es = a.pages[0].items.filter((i) => i.t === 'text' && i.s === 'e');
-  assert.ok(new Set(es.map((i) => i.size.toFixed(2) + i.rot.toFixed(1))).size > es.length * 0.8, 'no two e are alike');
-  const ruleColor = PAPERS.classmate.ruled.rule, margin = PAPERS.classmate.ruled.marginColor;
-  const strikes = a.pages[0].items.filter((i) => i.t === 'line' && i.color !== ruleColor && i.color !== margin && i.sw === 0.32);
+  assert.ok(new Set(es.map((i) => i.sy.toFixed(3) + i.rot.toFixed(1))).size > es.length * 0.8, 'no two e are alike');
+  const strikes = a.pages[0].items.filter((i) => i.slip);
   assert.ok(strikes.length >= 1, 'at least one corrected slip');
   const neat = layoutLetter({ input: SAMPLE_INPUT, content: SAMPLE_CONTENT, paperId: 'classmate', writingId: 'handlee', registry: reg, seed: 'x', humanize: 'neat' });
-  assert.equal(neat.pages[0].items.filter((i) => i.sw === 0.32).length, 0, 'neat writing has no slips');
+  assert.equal(neat.pages[0].items.filter((i) => i.slip).length, 0, 'neat writing has no slips');
   // the words the student wrote are all still there, in order
   const words = a.pages[0].items.filter((i) => i.b === 'p0').map((i) => i.s).join('');
   assert.ok(words.includes(SAMPLE_CONTENT.paragraphs[0].replace(/\s+/g, '').slice(0, 40)));
+});
+
+test('line spacing never changes: same size and grid for short and long letters', () => {
+  const LONGP = SAMPLE_CONTENT.paragraphs.map((p) => (p + ' ').repeat(4));
+  for (const [paperId, writingId] of [['classmate', 'handlee'], ['plain', 'academic'], ['cream', 'caveat'], ['graph', 'mynerve']]) {
+    const short = layoutLetter({ input: SAMPLE_INPUT, content: SAMPLE_CONTENT, paperId, writingId, registry: reg });
+    const long = layoutLetter({ input: SAMPLE_INPUT, content: { ...SAMPLE_CONTENT, paragraphs: LONGP }, paperId, writingId, registry: reg });
+    assert.equal(short.sizePt, long.sizePt, 'text size is fixed');
+    assert.ok(long.pages.length > short.pages.length, 'overflow goes to a new page');
+    const gap = short.settings.page.lineGap;
+    for (const r of [short, long]) {
+      for (const p of r.pages) {
+        // every row's baseline sits on the grid: (y - first baseline) is a whole number of lines (± handwriting drift)
+        // plain sheets space sections by fractions of a line, so measure from each block's first row there
+        const plain = PAPERS[paperId].kind === 'plain';
+        const firstOf = {};
+        for (const it of p.items) if (it.t === 'text' && it.b && firstOf[it.b] === undefined) firstOf[it.b] = it.y;
+        for (const it of p.items) {
+          if (it.t !== 'text' || !it.b) continue;
+          const base = plain ? firstOf[it.b] : r.settings.page.first - PAPERS[paperId].lift * gap / 7.6;
+          const steps = (it.y - base) / gap;
+          assert.ok(Math.abs(steps - Math.round(steps)) * gap < 1.1, `${paperId}/${writingId}: "${it.s}" off the line grid by ${(Math.abs(steps - Math.round(steps)) * gap).toFixed(2)} mm`);
+        }
+      }
+    }
+  }
 });
 
 test('unsupported characters are reported, rupee substituted', () => {

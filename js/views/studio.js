@@ -14,6 +14,7 @@ import { app } from '../core/state.js';
 import { PAPERS, PAPER_ORDER, WRITING, WRITING_ORDER } from '../doc/styles.js';
 import { TEMPLATES, DEMO_NOTICE } from '../doc/templates.js';
 import { toDoc, docTitle } from './common.js';
+import { openFineTune } from './fine-tune.js';
 import { generate } from './generate.js';
 
 const dev = new URLSearchParams(location.search).get('dev') === '1';
@@ -37,8 +38,7 @@ export async function render(root, { param, navigate }) {
   const fresh = (() => { try { const f = JSON.parse(sessionStorage.getItem('mg.fresh') || 'null'); if (f && f.id === gen.id) { sessionStorage.removeItem('mg.fresh'); return f; } } catch { /* ignore */ } return null; })();
   let doc = toDoc(gen);
   const isDemo = doc.kind === 'demo';
-  const humanKey = 'mg.human.' + gen.id;
-  try { doc.humanize = localStorage.getItem(humanKey) || 'natural'; } catch { doc.humanize = 'natural'; }
+
   let zoom = 1;
 
   /* ---------- layout ---------- */
@@ -66,21 +66,31 @@ export async function render(root, { param, navigate }) {
     isDemo ? h('span') : h('button.btn.secondary', { type: 'button', 'aria-label': 'More', onclick: () => openMore() }, iconEl('more', 20)),
     exportBtn));
 
-  // How human the handwriting looks: neat (no slips) → natural → rushed (more wobble and slips).
-  const humanCtl = h('div.segmented.human-ctl', { role: 'radiogroup', 'aria-label': 'Handwriting realism' });
+  // Quick realism presets + the full fine-tune sheet. Both are saved with the document.
+  const humanSeg = h('div.segmented.human-ctl', { role: 'radiogroup', 'aria-label': 'Handwriting realism' });
+  const tuneBtn = h('button.btn.secondary.sm', { type: 'button', onclick: () => openTune() }, iconEl('settings', 16), 'Fine-tune');
+  const humanCtl = h('div.studio-tune', humanSeg, tuneBtn);
+  const presetOf = () => (doc.settings && doc.settings.human && doc.settings.human.preset) || 'natural';
   const renderHuman = () => {
-    humanCtl.hidden = isDemo || WRITING[doc.writing || 'kalam'].type !== 'hand';
-    fill(humanCtl, ...[['neat', 'Neat'], ['natural', 'Natural'], ['rushed', 'Rushed']].map(([v, l]) => {
-      const b = h('button' + (doc.humanize === v ? '.on' : ''), { type: 'button', role: 'radio', 'aria-checked': String(doc.humanize === v) }, l);
+    humanCtl.hidden = isDemo;
+    humanSeg.hidden = isDemo || WRITING[doc.writing || 'handlee'].type !== 'hand';
+    fill(humanSeg, ...[['neat', 'Neat'], ['natural', 'Natural'], ['rushed', 'Rushed']].map(([v, l]) => {
+      const on = presetOf() === v;
+      const b = h('button' + (on ? '.on' : ''), { type: 'button', role: 'radio', 'aria-checked': String(on) }, l);
       b.addEventListener('click', () => {
-        if (doc.humanize === v) return;
+        if (presetOf() === v) return;
         haptic('select');
-        doc = { ...doc, humanize: v };
-        try { localStorage.setItem(humanKey, v); } catch { /* per-device preference */ }
+        const s = doc.settings || { font: {}, human: {}, page: {} };
+        doc = { ...doc, settings: { ...s, human: { preset: v, seed: s.human && s.human.seed } } };
         renderHuman(); draw();
+        persist({ settings: doc.settings });
       });
       return b;
     }));
+  };
+  const openTune = (tab) => {
+    if (isDemo) return;
+    openFineTune({ doc, tab, onChange: (settings) => { doc = { ...doc, settings }; gen.settings = settings; renderHuman(); draw(); persist({ settings }); } });
   };
   renderHuman();
 
@@ -203,6 +213,7 @@ export async function render(root, { param, navigate }) {
       side.append(
         h('div.card.side-card.stack.desk-only',
           h('button.btn.secondary.block', { type: 'button', onclick: () => openEditor() }, iconEl('edit', 18), 'Edit text'),
+          h('button.btn.secondary.block', { type: 'button', onclick: () => openTune() }, iconEl('settings', 18), 'Fine-tune writing & page'),
           h('button.btn.secondary.block', { type: 'button', onclick: () => regenerate() }, iconEl('refresh', 18), 'Write a new version'),
           h('button.btn.primary.block', { type: 'button', onclick: (e) => doExport(e.currentTarget) }, iconEl('download', 18), 'Download PDF'),
           h('p.small.subtle', 'Tap any line on the page to edit it. Edits and style changes are free.')));
@@ -218,7 +229,7 @@ export async function render(root, { param, navigate }) {
     saveState.textContent = 'Saving…';
     try {
       const res = await api('document.save', { code: session.code, generationId: gen.id, ...patch });
-      Object.assign(gen, { style: res.generation.style, paper: res.generation.paper, writing: res.generation.writing, content: res.generation.content, input: res.generation.input });
+      Object.assign(gen, { style: res.generation.style, paper: res.generation.paper, writing: res.generation.writing, settings: res.generation.settings, content: res.generation.content, input: res.generation.input });
       app.remember(gen);
       saveState.textContent = 'Saved';
       setTimeout(() => { if (saveState.textContent === 'Saved') saveState.textContent = ''; }, 1600);
@@ -331,6 +342,7 @@ export async function render(root, { param, navigate }) {
       content: () => h('div.stack',
         h('button.btn.secondary.block', { type: 'button', onclick: () => { s.close(); regenerate(); } }, iconEl('refresh', 18), 'Write a new version'),
         h('button.btn.secondary.block', { type: 'button', onclick: () => { s.close(); openEditor(); } }, iconEl('edit', 18), 'Edit text'),
+        h('button.btn.secondary.block', { type: 'button', onclick: () => { s.close(); openTune(); } }, iconEl('settings', 18), 'Fine-tune writing & page'),
         h('p.small.subtle', 'A new version uses one generation. This version stays in your history.'))
     });
   }
@@ -341,7 +353,7 @@ export async function render(root, { param, navigate }) {
     const ok = await confirmSheet({ title: 'Write a new version?', message: `Mistral AI will write a fresh letter from the same details. This uses 1 generation (${left} left). Your current version stays in History.`, confirm: 'Write new version' });
     if (!ok) return;
     const data = {};
-    const res = await generate({ action: 'letter.generate', kind: 'letter', data, saveDraft: () => {}, params: { paper: doc.paper, writing: doc.writing, input: doc.input } });
+    const res = await generate({ action: 'letter.generate', kind: 'letter', data, saveDraft: () => {}, params: { paper: doc.paper, writing: doc.writing, settings: doc.settings || null, input: doc.input } });
     if (!res) return;
     sessionStorage.setItem('mg.fresh', JSON.stringify({ id: res.generation.id, notice: res.notice || null }));
     navigate('studio/' + res.generation.id);

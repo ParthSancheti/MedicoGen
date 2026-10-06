@@ -4,7 +4,8 @@ import { haptic } from '../core/haptics.js';
 import { session } from '../core/session.js';
 import { iconEl } from '../ui/icons.js';
 import { app } from '../core/state.js';
-import { PAPERS, WRITING } from '../doc/styles.js';
+import { PAPERS, WRITING, PAPER_ORDER, WRITING_ORDER } from '../doc/styles.js';
+import { openFineTune, gearButton } from './fine-tune.js';
 import { longDate } from '../doc/text.js';
 import { runWizard, textField, choiceChips } from './wizard.js';
 import { generate } from './generate.js';
@@ -48,7 +49,7 @@ export function render(root, { navigate }) {
     date: todayIso(),
     tone: 'formal',
     paper: session.lastPaper || 'classmate',
-    writing: session.lastWriting || 'kalam',
+    writing: session.lastWriting || 'handlee',
     student: { name: profile.name || '', college: profile.college || '', department: profile.department || '', year: profile.year || '', division: profile.division || '', rollNo: profile.rollNo || '' },
     absence: { from: '', to: '', reasonCategory: '', reason: '', documents: false },
     recipient: { name: profile.hodName || '', designation: profile.designation || 'Head of Department', salutation: profile.salutation || 'Sir' }
@@ -192,38 +193,12 @@ export function render(root, { navigate }) {
       }
     },
     {
-      key: 'writing', eyebrow: 'Typography', title: 'Handwriting style', text: 'Choose the handwriting font for your letter.',
-      render: (d, ui) => {
-        const grid = h('div.style-grid');
-        import('../doc/styles.js').then(({ WRITING_ORDER, WRITING }) => {
-          WRITING_ORDER.forEach(id => {
-            const w = WRITING[id];
-            const btn = h('button.style-card' + (d.writing === id ? '.on' : ''), { type: 'button' });
-            btn.innerHTML = `<div class="preview"></div><div class="info"><h4>${w.name}</h4></div>`;
-            grid.append(btn);
-            pickerPreview(btn.querySelector('.preview'), d.paper || 'classmate', id, d);
-            btn.addEventListener('click', () => { d.writing = id; ui.changed(); grid.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn)); });
-          });
-        });
-        return h('div.stack', grid);
-      }
+      key: 'writing', eyebrow: 'Typography', title: 'Handwriting style', text: 'Pick a hand. Tap the gear on your pick to fine-tune height, slant, pen and mistakes.',
+      render: (d, ui) => pickerStep(d, ui, 'writing')
     },
     {
-      key: 'paper', eyebrow: 'Page', title: 'Paper style', text: 'Choose the physical paper layout.',
-      render: (d, ui) => {
-        const grid = h('div.style-grid');
-        import('../doc/styles.js').then(({ PAPER_ORDER, PAPERS }) => {
-          PAPER_ORDER.forEach(id => {
-            const p = PAPERS[id];
-            const btn = h('button.style-card' + (d.paper === id ? '.on' : ''), { type: 'button' });
-            btn.innerHTML = `<div class="preview"></div><div class="info"><h4>${p.name}</h4></div>`;
-            grid.append(btn);
-            pickerPreview(btn.querySelector('.preview'), id, d.writing || 'kalam', d);
-            btn.addEventListener('click', () => { d.paper = id; ui.changed(); grid.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn)); });
-          });
-        });
-        return h('div.stack', grid);
-      }
+      key: 'paper', eyebrow: 'Page', title: 'Paper style', text: 'Choose the sheet. The gear lets you set line spacing, margins and more.',
+      render: (d, ui) => pickerStep(d, ui, 'paper')
     },
     {
       key: 'review', eyebrow: 'Review', title: 'Ready to write?', text: (d) => `Mistral AI will write your letter using only these details. This uses 1 of your ${app.token.remaining} remaining generations.`,
@@ -255,7 +230,7 @@ export function render(root, { navigate }) {
     finish: async (d, ctl) => {
       const res = await generate({
         action: 'letter.generate', kind: 'letter', data: d, saveDraft: ctl.saveDraft,
-        params: { paper: d.paper, writing: d.writing, input: { letterType: d.letterType, date: d.date, tone: d.tone, student: d.student, absence: d.absence, recipient: d.recipient } }
+        params: { paper: d.paper, writing: d.writing, settings: d.settings || null, input: { letterType: d.letterType, date: d.date, tone: d.tone, student: d.student, absence: d.absence, recipient: d.recipient } }
       });
       if (!res) return;
       session.profile = { ...d.student, hodName: d.recipient.name, designation: d.recipient.designation, salutation: d.recipient.salutation };
@@ -263,6 +238,55 @@ export function render(root, { navigate }) {
       navigate('studio/' + res.generation.id);
     }
   });
+}
+
+/** Card grid for handwriting or paper, with a fine-tune gear on the selected card. */
+function pickerStep(d, ui, kind) {
+  const grid = h('div.style-grid');
+  const ids = kind === 'writing' ? WRITING_ORDER : PAPER_ORDER;
+  const meta = kind === 'writing' ? WRITING : PAPERS;
+  const cards = new Map();
+  const tune = () => openFineTune({
+    doc: tuneDoc(d), tab: kind === 'paper' ? 'page' : 'font',
+    onChange: (settings) => { d.settings = settings; ui.changed(); cards.forEach((c, id) => drawPreview(c, id)); }
+  });
+  const drawPreview = (card, id) => pickerPreview(card.querySelector('.preview'), kind === 'paper' ? id : d.paper || 'classmate', kind === 'writing' ? id : d.writing || 'handlee', d);
+  const mark = () => cards.forEach((card, id) => {
+    const on = d[kind] === id;
+    card.classList.toggle('on', on);
+    card.setAttribute('aria-pressed', String(on));
+    card.querySelector('.gear-btn')?.remove();
+    if (on) card.prepend(gearButton(tune));
+  });
+  ids.forEach((id) => {
+    const m = meta[id];
+    const card = h('div.style-card', { role: 'button', tabindex: '0', 'aria-label': m.name },
+      h('div.preview'), h('h3', m.name), h('p', kind === 'writing' ? m.tag : m.blurb), h('span.tick', iconEl('check', 14)));
+    const pick = () => {
+      if (d[kind] === id) return;
+      d[kind] = id;
+      if (kind === 'writing') session.lastWriting = id; else session.lastPaper = id;
+      ui.changed(); haptic('select'); mark();
+    };
+    card.addEventListener('click', pick);
+    card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
+    cards.set(id, card);
+    grid.append(card);
+    drawPreview(card, id);
+  });
+  mark();
+  return h('div.stack', grid);
+}
+
+function tuneDoc(d) {
+  const days = Math.max(1, daysBetween(d.absence.from, d.absence.to) || 1);
+  return {
+    kind: 'letter', id: 'tune-preview', paper: d.paper || 'classmate', writing: d.writing || 'handlee', settings: d.settings || null,
+    input: { ...d, absence: { ...d.absence, days } },
+    content: { subject: 'Application for leave of absence', salutation: `Respected ${d.recipient.salutation || 'Sir'},`,
+      paragraphs: ['I am writing to request leave for the above days. I will complete all the lectures and practical work that I miss with the help of my classmates.'],
+      closing: 'Thanking you.', signoff: 'Yours obediently,' }
+  };
 }
 
 /** Zooms a picker preview into the subject and first lines, where the handwriting is readable. */
@@ -279,7 +303,7 @@ async function pickerPreview(host, paperId, writingId, d) {
   const days = Math.max(1, daysBetween(d.absence.from, d.absence.to) || 1);
   const period = days === 1 ? longDate(d.absence.from) : `${longDate(d.absence.from)} to ${longDate(d.absence.to)}`;
   const doc = {
-    kind: 'letter', id: 'style-preview', paper: paperId, writing: writingId,
+    kind: 'letter', id: 'style-preview', paper: paperId, writing: writingId, settings: d.settings || null,
     input: { ...d, absence: { ...d.absence, days } },
     content: {
       subject: `Application for leave ${d.absence.from ? (days === 1 ? 'on ' : 'from ') + period : ''}`.trim(),

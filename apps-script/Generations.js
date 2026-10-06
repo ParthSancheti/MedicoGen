@@ -9,8 +9,33 @@
 
 var DEMO_TEMPLATE_IDS_ = ['demo-fitness', 'demo-leave', 'demo-opd'];
 // A letter's look is stored as "paper|writing" in the style column (e.g. "classmate|handlee").
-var PAPER_IDS_ = ['classmate', 'black_margin', 'legal', 'cream', 'plain'];
-var WRITING_IDS_ = ['handlee', 'caveat', 'patrick', 'gochi', 'schoolbell', 'indie', 'kalam', 'academic', 'modern', 'classic'];
+var PAPER_IDS_ = ['classmate', 'college', 'wide', 'register', 'black_margin', 'exam', 'legal', 'kraft', 'graph', 'dots', 'cream', 'plain'];
+var WRITING_IDS_ = ['handlee', 'kalam', 'patrick', 'caveat', 'mynerve', 'covered', 'architects', 'shadows', 'gochi', 'schoolbell', 'indie',
+  'dawning', 'cedarville', 'nothing', 'homemade', 'academic', 'modern', 'classic'];
+/** Precision settings: group → key → [min, max]. Mirrors SETTINGS_SPEC in js/doc/styles.js. */
+var SETTINGS_RANGES_ = {
+  font: { size: [0.7, 1.4], height: [0.8, 1.5], width: [0.8, 1.3], letterSpacing: [-0.4, 0.8], wordSpacing: [0.6, 2], slant: [-12, 20], weight: [0, 0.3] },
+  human: { glyph: [0, 2], word: [0, 2], line: [0, 2], slantVar: [0, 2], pressure: [0, 2], margin: [0, 2], retrace: [0, 3], errors: [0, 6], seed: [0, 999] },
+  page: { lineGap: [5.5, 11], first: [20, 60], marginLeft: [10, 50], marginRight: [8, 40], indent: [0, 25], blockGap: [0, 3], sigGap: [1, 4] }
+};
+
+function cleanSettings_(raw) {
+  var out = { font: {}, human: {}, page: {} };
+  if (!raw || typeof raw !== 'object') return out;
+  Object.keys(SETTINGS_RANGES_).forEach(function (g) {
+    var src = raw[g] || {};
+    Object.keys(SETTINGS_RANGES_[g]).forEach(function (k) {
+      var v = Number(src[k]);
+      if (src[k] === null || src[k] === undefined || src[k] === '' || isNaN(v)) return;
+      out[g][k] = Math.min(SETTINGS_RANGES_[g][k][1], Math.max(SETTINGS_RANGES_[g][k][0], v));
+    });
+  });
+  if (raw.font && /^#[0-9a-f]{6}$/i.test(String(raw.font.ink || ''))) out.font.ink = String(raw.font.ink).toLowerCase();
+  if (raw.page && (raw.page.align === 'left' || raw.page.align === 'justify')) out.page.align = raw.page.align;
+  if (raw.human && ['neat', 'natural', 'rushed'].indexOf(raw.human.preset) >= 0) out.human.preset = raw.human.preset;
+  return out;
+}
+
 var LEGACY_STYLES_ = { notebook: 'classmate|kalam', academic: 'plain|academic', modern: 'plain|modern', classic: 'cream|classic' };
 
 function cleanGenerationId_(value) {
@@ -31,6 +56,7 @@ function generationView_(g) {
     source: g.source,
     input: parseJson_(g.inputJson, {}),
     content: parseJson_(g.contentJson, null),
+    settings: parseJson_(g.settingsJson, null),
     createdAt: g.createdAt,
     updatedAt: g.updatedAt
   };
@@ -40,7 +66,7 @@ function generationView_(g) {
  * Reserves one attempt. Returns { gen, existing } where existing=true means the id was seen before
  * and nothing was consumed.
  */
-function reserveGeneration_(p, kind, style, title, input) {
+function reserveGeneration_(p, kind, style, title, input, settings) {
   var generationId = cleanGenerationId_(p.generationId);
   return withLock_(function () {
     var prior = findOne_('Generations', 'generationId', generationId);
@@ -63,6 +89,7 @@ function reserveGeneration_(p, kind, style, title, input) {
       source: '',
       inputJson: JSON.stringify(input),
       contentJson: '',
+      settingsJson: settings ? JSON.stringify(settings) : '',
       createdAt: nowIso_(),
       updatedAt: nowIso_()
     });
@@ -105,7 +132,7 @@ function apiGenerateLetter_(p) {
   var input = normalizeLetterInput_(p.input || {});
   var style = cleanStyle_(p, '');
   var title = letterTitle_(input);
-  var reserved = reserveGeneration_(p, 'letter', style, title, input);
+  var reserved = reserveGeneration_(p, 'letter', style, title, input, p.settings ? cleanSettings_(p.settings) : null);
   var gen = reserved.gen;
 
   if (reserved.existing) {
@@ -160,6 +187,7 @@ function apiSaveDocument_(p) {
     if ((p.style || p.paper || p.writing) && gen.kind === 'letter') patch.style = cleanStyle_(p, gen.style);
     if (p.content && gen.kind === 'letter') patch.contentJson = JSON.stringify(sanitizeLetterContent_(p.content, true));
     if (p.input && gen.kind === 'letter') patch.inputJson = JSON.stringify(normalizeLetterInput_(p.input));
+    if (p.settings && gen.kind === 'letter') patch.settingsJson = JSON.stringify(cleanSettings_(p.settings));
     if (p.content && gen.kind === 'demo') {
       var prev = parseJson_(gen.contentJson, {});
       var fields = {};

@@ -5,7 +5,7 @@
  */
 var SCHEMA_ = {
   Tokens: ['code', 'attemptsTotal', 'attemptsUsed', 'status', 'expiresAt', 'createdAt', 'source', 'requestId', 'phoneHash', 'referralCode', 'note', 'lastUsedAt'],
-  Generations: ['generationId', 'code', 'sessionId', 'kind', 'style', 'title', 'status', 'source', 'inputJson', 'contentJson', 'createdAt', 'updatedAt'],
+  Generations: ['generationId', 'code', 'sessionId', 'kind', 'style', 'title', 'status', 'source', 'inputJson', 'contentJson', 'createdAt', 'updatedAt', 'settingsJson'],
   Requests: ['requestId', 'phone', 'phoneHash', 'paymentRef', 'proofFileId', 'referralCode', 'status', 'issuedCode', 'note', 'createdAt', 'decidedAt'],
   Referrals: ['referralId', 'referralCode', 'requestId', 'phoneHash', 'status', 'createdAt', 'decidedAt'],
   Rewards: ['rewardId', 'referralCode', 'amountInr', 'status', 'createdAt', 'paidAt'],
@@ -31,6 +31,10 @@ function sheet_(name) {
     sh.getRange(1, 1, 1000, headers.length).setNumberFormat('@');
     sh.getRange(1, 1, 1, headers.length).setValues([headers]);
     sh.setFrozenRows(1);
+  } else if (sh.getLastColumn() < headers.length) {
+    // schema grew (new columns are only ever appended): add the missing header names
+    var have = sh.getLastColumn();
+    sh.getRange(1, have + 1, 1, headers.length - have).setValues([headers.slice(have)]);
   }
   return sh;
 }

@@ -1,24 +1,19 @@
 /**
  * Handwriting humaniser.
  *
- * A handwriting font alone still looks typed: every "e" is identical, every line is ruler-straight.
- * This module turns words into individually placed glyphs with the irregularities of a real pen:
+ * A handwriting font alone still looks typed: every "e" is identical and every line is
+ * ruler-straight. This module places each glyph individually with the irregularities of a real pen:
  *
- *   per word   - slant, size, ink pressure, letter spacing, small baseline offset
- *   per glyph  - size, rotation, vertical wobble, spacing; occasional retraced (doubled) stroke
- *   per line   - slow baseline wander + slope, ragged left margin, writer fatigue down the page
- *   mistakes   - a few words written wrongly, struck through, then rewritten correctly
+ *   per glyph  - height/width, rotation, vertical wobble, spacing, ink pressure, retraced strokes
+ *   per word   - slant, pressure, small baseline offset, spacing
+ *   per line   - gentle baseline drift that stays on the ruled line, ragged left margin
+ *   mistakes   - a set number of words written wrongly, struck through, then rewritten correctly
  *
- * Everything comes from a seeded PRNG, so the preview and the PDF get exactly the same marks.
- * All units are mm (sizes in pt).
+ * All variation is CENTRED: averaged over a line the text keeps the same size and density, so every
+ * line holds a similar amount of writing and the line spacing never changes. Every effect is scaled
+ * by the "human" settings and comes from a seeded PRNG, so preview and PDF get identical marks.
+ * Units: mm (font sizes in pt).
  */
-
-/** How strong each effect is. "natural" is the default; the studio can lower it. */
-export const HUMANIZE = {
-  neat:    { glyph: 0.6, word: 0.6, line: 0.6, errors: 0 },
-  natural: { glyph: 1,   word: 1,   line: 1,   errors: 1 },
-  rushed:  { glyph: 1.5, word: 1.4, line: 1.4, errors: 2 }
-};
 
 /** Words we never "misspell": they carry facts or are too short to look like a real slip. */
 const PROTECT = /\d|^[A-Z][a-z]*\.$|^(I|a|an|the|to|of|in|on|at|is|am|as|my|me|be|by|for|and|was|has|had|you|sir|madam)$/i;
@@ -36,96 +31,102 @@ function typo(word, rng) {
   return bad === core ? null : bad;
 }
 
+export function canTypo(word) {
+  const core = word.replace(/[^A-Za-z]/g, '');
+  return core.length >= 5 && !PROTECT.test(word) && !/[A-Z]/.test(core.slice(1));
+}
+
+const centred = (rng) => rng() - 0.5; // −0.5 … +0.5, mean 0
+
 /**
- * Turns text into hand tokens. Each token is a word (or punctuation run glued to the word before it)
- * with measured glyphs. Returns tokens compatible with wrapTokens (text, w, space).
- *
+ * Turns text into hand tokens (words with measured, individually varied glyphs).
  * @param {string} text
- * @param {object} o  { fontId, size, registry, rng, strength, errors: boolean, budget: {left} }
+ * @param {object} o { fontId, size, registry, rng, human, font, slips: Set<number>|null, wordIndex: {n} }
  */
 export function handTokens(text, o) {
-  const { fontId, size, registry, rng, strength: k } = o;
+  const { fontId, size, registry, rng, human: H, font: F } = o;
   const words = text.split(/\s+/).filter(Boolean);
-  const spaceW = registry.width(fontId, ' ', size);
+  const spaceW = registry.width(fontId, ' ', size) * F.width;
   const out = [];
 
   const makeWord = (word, extra = {}) => {
-    const wordScale = 1 + (rng() - 0.5) * 0.05 * k.word;
-    const tracking = (rng() - 0.45) * 0.18 * k.word;           // tight or airy letters
+    const wordScale = 1 + centred(rng) * 0.016 * H.word;     // tiny, centred: lines keep their density
     const glyphs = [];
     let x = 0;
     for (const ch of word) {
-      const ds = wordScale * (1 + (rng() - 0.5) * 0.06 * k.glyph);
-      const gs = size * ds;
-      const w = registry.width(fontId, ch, gs);
+      const sx = F.width * wordScale * (1 + centred(rng) * 0.03 * H.glyph);
+      const sy = F.height * wordScale * (1 + centred(rng) * 0.06 * H.glyph);
+      const w = registry.width(fontId, ch, size) * sx;
       glyphs.push({
-        ch, x, size: gs, w,
-        dy: (rng() - 0.5) * 0.28 * k.glyph,
-        rot: (rng() - 0.5) * 4.2 * k.glyph,
-        op: 0.9 + rng() * 0.1,
-        retrace: rng() < 0.025 * k.glyph && /[a-z]/i.test(ch)  // pen went over the stroke twice
+        ch, x, sx, sy, w,
+        dy: centred(rng) * 0.22 * H.glyph,
+        rot: centred(rng) * 3.2 * H.glyph,
+        op: 1 - rng() * 0.08 * H.pressure,
+        retrace: rng() < 0.02 * H.retrace && /[a-z]/i.test(ch)       // pen went over the stroke twice
       });
-      x += w + tracking + (rng() - 0.5) * 0.12 * k.glyph;
+      x += w + F.letterSpacing + centred(rng) * 0.1 * H.glyph;
     }
-    const w = Math.max(0, x - tracking);
+    const w = Math.max(0, x - F.letterSpacing);
     return {
       text: word, f: fontId, size, w,
-      space: Math.max(spaceW * 0.85, spaceW * (0.95 + rng() * 0.45) + (rng() - 0.3) * 0.4 * k.word),
-      hand: { glyphs, slant: (rng() - 0.5) * 7 * k.word, dy: (rng() - 0.5) * 0.4 * k.word, ink: 0.86 + rng() * 0.14 },
+      space: Math.max(spaceW * 0.7, spaceW * F.wordSpacing * (1 + centred(rng) * 0.3 * H.word)),
+      hand: {
+        glyphs,
+        slant: F.slant + centred(rng) * 6 * H.slantVar,
+        dy: centred(rng) * 0.25 * H.word,
+        ink: 1 - rng() * 0.12 * H.pressure
+      },
       ...extra
     };
   };
 
   for (const word of words) {
-    // A few mistakes per letter: written wrong, struck out, written again.
-    if (o.errors && o.budget.left > 0 && rng() < 0.035 * k.errors) {
+    const idx = o.wordIndex ? o.wordIndex.n++ : -1;
+    if (o.slips && o.slips.has(idx)) {
       const bad = typo(word, rng);
-      if (bad) {
-        o.budget.left--;
-        out.push(makeWord(bad, { struck: true }));
-      }
+      if (bad) out.push(makeWord(bad, { struck: true }));
     }
     out.push(makeWord(word));
   }
   return out;
 }
 
-/** Slow, smooth baseline drift for one written line (two sines with random phase + slope). */
+/** Gentle baseline drift for one written line. It never leaves the ruled line (±0.35 mm at most). */
 export function lineWander(rng, strength) {
-  const a1 = (0.18 + rng() * 0.22) * strength, a2 = (0.08 + rng() * 0.1) * strength;
-  const l1 = 70 + rng() * 60, l2 = 25 + rng() * 20;
+  const a1 = (0.08 + rng() * 0.12) * strength, a2 = (0.03 + rng() * 0.05) * strength;
+  const l1 = 80 + rng() * 60, l2 = 25 + rng() * 20;
   const p1 = rng() * Math.PI * 2, p2 = rng() * Math.PI * 2;
-  const slope = (rng() - 0.5) * 0.012 * strength;           // mm per mm (± 0.6 mm over a line)
-  return (dx) => a1 * Math.sin(dx / l1 * Math.PI * 2 + p1) + a2 * Math.sin(dx / l2 * Math.PI * 2 + p2) + slope * dx;
+  const slope = centred(rng) * 0.0035 * strength;           // ≤ ±0.3 mm across a full line
+  const fn = (dx) => a1 * Math.sin(dx / l1 * Math.PI * 2 + p1) + a2 * Math.sin(dx / l2 * Math.PI * 2 + p2) + slope * dx;
+  return (dx) => Math.max(-0.35, Math.min(0.35, fn(dx)));
 }
 
 /**
  * Emits drawing items for a row of hand tokens.
  * @returns {number} the x where the row ended
  */
-export function emitHand(items, toks, { x0, baseline, wander, color, blockId, rng, fatigue }) {
+export function emitHand(items, toks, { x0, baseline, wander, color, blockId, rng, weight }) {
   let x = x0;
   toks.forEach((t, i) => {
     const h = t.hand;
-    const slant = h.slant + fatigue * 2.2;
     const wordStartX = x;
     for (const g of h.glyphs) {
       const gx = x + g.x;
       const gy = baseline + h.dy + g.dy + wander(gx - x0);
-      const base = { t: 'text', x: gx, y: gy, s: g.ch, f: t.f, size: g.size, w: g.w, color, rot: g.rot, skew: slant, opacity: +(h.ink * g.op).toFixed(3), b: blockId };
+      const base = { t: 'text', x: gx, y: gy, s: g.ch, f: t.f, size: t.size, w: g.w, color, rot: g.rot, skew: h.slant, sx: g.sx, sy: g.sy, stroke: weight, opacity: +(h.ink * g.op).toFixed(3), b: blockId };
       items.push(base);
-      if (g.retrace) items.push({ ...base, x: gx + 0.09, y: gy - 0.05, opacity: +(base.opacity * 0.55).toFixed(3), rot: g.rot + 0.6, b: undefined });
+      if (g.retrace) items.push({ ...base, x: gx + 0.08, y: gy - 0.04, opacity: +(base.opacity * 0.5).toFixed(3), rot: g.rot + 0.6, b: undefined });
     }
     if (t.struck) {
       // one or two quick strokes through the mistake, following the baseline drift
       const strokes = rng() < 0.4 ? 2 : 1;
-      const midY = (dx) => baseline + h.dy + wander(dx - x0) - t.size * 0.12;
+      const midY = (dx) => baseline + h.dy + wander(dx - x0) - t.size * 0.12 * (h.glyphs[0] ? h.glyphs[0].sy : 1);
       for (let s = 0; s < strokes; s++) {
         const off = s * 0.55 - (strokes - 1) * 0.27;
         items.push({
-          t: 'line', x1: wordStartX - 0.25, y1: midY(wordStartX) + off + (rng() - 0.5) * 0.4,
-          x2: wordStartX + t.w + 0.6, y2: midY(wordStartX + t.w) + off + (rng() - 0.5) * 0.5,
-          sw: 0.32, color, opacity: 0.85
+          t: 'line', x1: wordStartX - 0.25, y1: midY(wordStartX) + off + centred(rng) * 0.4,
+          x2: wordStartX + t.w + 0.6, y2: midY(wordStartX + t.w) + off + centred(rng) * 0.5,
+          sw: 0.32 + (weight || 0) * 0.5, color, opacity: 0.85, slip: true
         });
       }
     }

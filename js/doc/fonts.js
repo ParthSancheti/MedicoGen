@@ -18,6 +18,14 @@ export const FONT_FILES = {
   indie:          { file: 'IndieFlower-Regular.ttf',        family: 'MG Indie Flower', weight: 400, label: 'Indie Flower' },
   schoolbell:     { file: 'Schoolbell-Regular.ttf',         family: 'MG Schoolbell',   weight: 400, label: 'Schoolbell' },
   justanother:    { file: 'JustAnotherHand-Regular.ttf',    family: 'MG Just Another Hand', weight: 400, label: 'Just Another Hand' },
+  shadows:        { file: 'ShadowsIntoLight_400Regular.ttf', family: 'MG Shadows Into Light', weight: 400, label: 'Shadows Into Light' },
+  covered:        { file: 'CoveredByYourGrace_400Regular.ttf', family: 'MG Covered By Your Grace', weight: 400, label: 'Covered By Your Grace' },
+  architects:     { file: 'ArchitectsDaughter_400Regular.ttf', family: 'MG Architects Daughter', weight: 400, label: 'Architects Daughter' },
+  dawning:        { file: 'DawningofaNewDay_400Regular.ttf', family: 'MG Dawning', weight: 400, label: 'Dawning of a New Day' },
+  cedarville:     { file: 'CedarvilleCursive_400Regular.ttf', family: 'MG Cedarville', weight: 400, label: 'Cedarville Cursive' },
+  nothing:        { file: 'NothingYouCouldDo_400Regular.ttf', family: 'MG Nothing You Could Do', weight: 400, label: 'Nothing You Could Do' },
+  homemade:       { file: 'HomemadeApple_400Regular.ttf', family: 'MG Homemade Apple', weight: 400, label: 'Homemade Apple' },
+  mynerve:        { file: 'Mynerve_400Regular.ttf', family: 'MG Mynerve', weight: 400, label: 'Mynerve' },
   serif:          { file: 'SourceSerif4_400Regular.ttf',    family: 'MG Source Serif', weight: 400, label: 'Source Serif 4' },
   serifBold:      { file: 'SourceSerif4_600SemiBold.ttf',   family: 'MG Source Serif', weight: 600, label: 'Source Serif 4 SemiBold' },
   sans:           { file: 'Inter_400Regular.ttf',           family: 'MG Inter',        weight: 400, label: 'Inter' },
@@ -95,6 +103,13 @@ export class FontRegistry {
       this.widths.set(key, units);
     }
     return units * sizePt * PT;
+  }
+
+  /** Visual body height of a font as a fraction of its size: mean of x-height and cap height. */
+  bodyHeight(id) {
+    const { font } = this.get(id);
+    const x = font.glyphForCodePoint(0x78).bbox.maxY, H = font.glyphForCodePoint(0x48).bbox.maxY;
+    return ((x + H) / 2) / font.unitsPerEm || 0.6;
   }
 
   /** Ascent/descent in mm at a size (for vertical centring). */
