@@ -25,7 +25,8 @@ export const FONT_FILES = {
   cedarville:     { file: 'CedarvilleCursive_400Regular.ttf', family: 'MG Cedarville', weight: 400, label: 'Cedarville Cursive' },
   nothing:        { file: 'NothingYouCouldDo_400Regular.ttf', family: 'MG Nothing You Could Do', weight: 400, label: 'Nothing You Could Do' },
   homemade:       { file: 'HomemadeApple_400Regular.ttf', family: 'MG Homemade Apple', weight: 400, label: 'Homemade Apple' },
-  mynerve:        { file: 'Mynerve_400Regular.ttf', family: 'MG Mynerve', weight: 400, label: 'Mynerve' },
+  // OpenType features applied identically by the shaper and the PDF embedder (Mynerve's wide t_t ligature reads as a gap)
+  mynerve:        { file: 'Mynerve_400Regular.ttf', family: 'MG Mynerve', weight: 400, label: 'Mynerve', features: { liga: false } },
   serif:          { file: 'SourceSerif4_400Regular.ttf',    family: 'MG Source Serif', weight: 400, label: 'Source Serif 4' },
   serifBold:      { file: 'SourceSerif4_600SemiBold.ttf',   family: 'MG Source Serif', weight: 600, label: 'Source Serif 4 SemiBold' },
   sans:           { file: 'Inter_400Regular.ttf',           family: 'MG Inter',        weight: 400, label: 'Inter' },
@@ -69,12 +70,14 @@ export class FontRegistry {
       const bytes = new Uint8Array(buf);
       if (bytes.length < 1000) throw new Error(`Font file ${meta.file} is empty or missing`);
       const font = this.fontkit.create(bytes);
+      let faceOk;
       if (this.registerFaces && typeof FontFace !== 'undefined') {
         const face = new FontFace(meta.family, bytes.slice().buffer, { weight: String(meta.weight), style: 'normal' });
         await face.load();
         document.fonts.add(face);
+        faceOk = face.status === 'loaded';
       }
-      const entry = { id, meta, bytes, font };
+      const entry = { id, meta, bytes, font, faceLoaded: faceOk };
       this.fonts.set(id, entry);
       return entry;
     })();
@@ -105,15 +108,79 @@ export class FontRegistry {
     return units * sizePt * PT;
   }
 
-  /** Visual body height of a font as a fraction of its size: mean of x-height and cap height. */
-  bodyHeight(id) {
-    const { font } = this.get(id);
-    const x = font.glyphForCodePoint(0x78).bbox.maxY, H = font.glyphForCodePoint(0x48).bbox.maxY;
-    return ((x + H) / 2) / font.unitsPerEm || 0.6;
+  /**
+   * Measured metrics as fractions of the em. Handwriting fonts often ship wrong OS/2 values
+   * (Handlee declares an x-height of 0.33 while its "x" is 0.49 tall), so the optical values come
+   * from real glyph outlines; the declared OS/2 values are kept for diagnostics.
+   */
+  metrics(id) {
+    const entry = this.get(id);
+    if (entry.metrics) return entry.metrics;
+    const { font } = entry;
+    const u = font.unitsPerEm;
+    const box = (chars, pick, fn) => {
+      const v = [...chars].filter((c) => font.hasGlyphForCodePoint(c.codePointAt(0))).map((c) => font.glyphForCodePoint(c.codePointAt(0)).bbox[pick]);
+      return v.length ? fn(...v) / u : null;
+    };
+    const xHeight = box('xvwz', 'maxY', (...v) => v.reduce((a, b) => a + b, 0) / v.length) || font.xHeight / u;
+    const capHeight = box('HEIT', 'maxY', (...v) => v.reduce((a, b) => a + b, 0) / v.length) || font.capHeight / u;
+    entry.metrics = {
+      unitsPerEm: u,
+      xHeight,
+      capHeight,
+      ascender: box('bdfhklt', 'maxY', Math.max) || font.ascent / u,      // tallest lowercase stroke
+      descender: -(box('gjpqy', 'minY', Math.min) || font.descent / u),   // deepest tail, positive
+      body: (xHeight + capHeight) / 2,
+      declared: { ascent: font.ascent / u, descent: -font.descent / u, lineGap: font.lineGap / u, xHeight: font.xHeight / u, capHeight: font.capHeight / u }
+    };
+    return entry.metrics;
   }
 
-  /** Ascent/descent in mm at a size (for vertical centring). */
-  metrics(id, sizePt) {
+  /** Visual body height of a font as a fraction of its size: mean of x-height and cap height. */
+  bodyHeight(id) {
+    return this.metrics(id).body;
+  }
+
+  /**
+   * Shapes a word with the font's own OpenType layout (kerning, ligatures, contextual alternates)
+   * and returns its glyphs grouped into clusters: a cluster is a base glyph plus any zero-width
+   * marks attached to it, so accents and combined characters always move with their letter.
+   * Advances are in em units (multiply by size).
+   */
+  shape(id, text) {
+    const key = id + '§' + text;
+    this.shapes = this.shapes || new Map();
+    let out = this.shapes.get(key);
+    if (out) return out;
+    const { font, meta } = this.get(id);
+    const run = font.layout(text, meta.features);
+    const u = font.unitsPerEm;
+    out = [];
+    run.glyphs.forEach((g, i) => {
+      const p = run.positions[i];
+      const glyph = { gid: g.id, ch: String.fromCodePoint(...(g.codePoints.length ? g.codePoints : [0xfffd])), adv: g.advanceWidth / u, dx: p.xOffset / u, dy: p.yOffset / u, kern: (p.xAdvance - g.advanceWidth) / u };
+      if (out.length && g.advanceWidth === 0) out[out.length - 1].marks.push(glyph); // mark glyph rides on its base
+      else out.push({ ...glyph, marks: [] });
+    });
+    if (this.shapes.size > 5000) this.shapes.clear();
+    this.shapes.set(key, out);
+    return out;
+  }
+
+  /** SVG path data of a glyph outline, in font units (y up). Cached. */
+  glyphPath(id, gid) {
+    const entry = this.get(id);
+    entry.paths = entry.paths || new Map();
+    let d = entry.paths.get(gid);
+    if (d === undefined) {
+      d = entry.font.getGlyph(gid).path.toSVG();
+      entry.paths.set(gid, d);
+    }
+    return d;
+  }
+
+  /** Declared ascent/descent in mm at a size (for vertical centring). */
+  metricsAt(id, sizePt) {
     const { font } = this.get(id);
     const s = (sizePt * PT) / font.unitsPerEm;
     return { ascent: font.ascent * s, descent: -font.descent * s, capHeight: (font.capHeight || font.ascent * 0.7) * s };
@@ -139,7 +206,9 @@ export class FontRegistry {
 
   /** Development diagnostics: what is loaded and what each font covers. */
   diagnostics() {
-    return [...this.fonts.values()].map(({ id, meta, bytes, font }) => ({
+    return [...this.fonts.values()].map(({ id, meta, bytes, font, faceLoaded }) => ({
+      metrics: this.metrics(id),
+      faceLoaded: faceLoaded === undefined ? null : faceLoaded,
       id,
       file: meta.file,
       family: font.familyName,

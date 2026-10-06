@@ -42,7 +42,7 @@ export function navigate(path, { replace = false } = {}) {
 
 async function route() {
   const { name, param } = parseHash();
-  if (!app.token) {
+  if (!app.token && name !== 'dev') { // the developer Lab renders locally and spends no codes
     showLanding();
     return;
   }

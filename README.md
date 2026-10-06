@@ -17,7 +17,14 @@ npm test             # backend + layout/PDF tests (Node 22+)
 
 With `apiUrl` empty in `js/config.js`, the app runs in **mock mode**. The *real* Apps Script code in `apps-script/` runs inside the browser against an in-memory Sheets/Drive/Cache stand-in, saved to localStorage.
 
-**Real Mistral letters while developing:** copy `.env.example` to `.env` and set `MISTRAL_API_KEY=...`. The dev server then proxies the mock backend's AI calls to Mistral (`/api/mistral`), and the key stays in Node. Without a key, a local composer returns letters in Mistral's response format. That composer is **not real AI**. `.env` is git-ignored and the dev server refuses to serve dotfiles.
+**Where is the `.env` file?** It is deliberately not in the repository or the zip, because it holds your secret key. Create it yourself from the template:
+
+```bash
+cp .env.example .env      # then edit .env and paste your key after MISTRAL_API_KEY=
+npm run dev               # the dev server reads .env at start-up
+```
+
+The dev server then proxies the mock backend's AI calls to Mistral (`/api/mistral`), and the key stays in Node. Without a key, a local composer returns letters in Mistral's response format. That composer is **not real AI**, and the studio labels such letters **Mock AI (test mode)**. `.env` is git-ignored and the dev server refuses to serve dotfiles. In production the key does **not** go in a file: it goes in Apps Script → Project Settings → Script Properties as `MISTRAL_API_KEY` (see below).
 
 | Mock item | Value |
 |---|---|
@@ -26,7 +33,7 @@ With `apiUrl` empty in `js/config.js`, the app runs in **mock mode**. The *real*
 | Admin console | `/admin.html`, password `admin` (mock only) |
 | Simulate the AI | `?ai=429` · `error` · `garbage` · `invent` · `ok` |
 | Reset mock database | `?resetmock=1` |
-| Developer tools | `?dev=1` (font diagnostics, template field boxes); `#/dev` font lab with a free **Check Mistral** health check |
+| Developer tools | `?dev=1` shows the Fine-tune gear and template field boxes; `#/dev?dev=1` opens the **Handwriting Lab** (below) |
 
 Browser walkthroughs (with the dev server running): `node tests/e2e.mjs out/` and `node tests/e2e-admin.mjs out/`.
 
@@ -40,7 +47,7 @@ Browser walkthroughs (with the dev server running): `node tests/e2e.mjs out/` an
 4. In your Apps Script project: **Project Settings → Script Properties → Add** `MISTRAL_API_KEY` = your key.
 5. Optional properties: `MISTRAL_MODEL` (default `mistral-small-latest`), `MISTRAL_FALLBACK_MODEL` (default `open-mistral-nemo`), `AI_COOLDOWN_SEC` (default 60).
 6. Redeploy the web app (**Deploy → Manage deployments → Edit → New version**).
-7. Check it: the admin Overview stops warning about a missing key. In the app's `#/dev` page, **Check Mistral** reports the model.
+7. Check it: the admin Overview stops warning about a missing key. In the Handwriting Lab (`#/dev?dev=1`), **Check AI** reports the model.
 
 API used: `POST https://api.mistral.ai/v1/chat/completions` with `Authorization: Bearer <key>` and `response_format: { type: "json_schema", json_schema: { name, schema, strict: true } }`. The reply is read from `choices[0].message.content`.
 
@@ -124,26 +131,62 @@ The admin console works on phone (bottom tabs, cards) and desktop (sidebar, dens
 - **One layout, two renderers.** The layout produces items positioned in millimetres. `render-svg.js` (preview) and `render-pdf.js` (export) draw the same items, using the same text matrix for glyph rotation and slant.
 - **No silent fallback.** A missing font fails loudly rather than quietly switching to Helvetica.
 
-**Paper × handwriting.**
-- **12 page formats:** Classmate, Narrow ruled, Wide ruled, Register (Date/Page box), Black Margin, Exam sheet, Legal Pad, Recycled, Graph (4 mm), Dot grid, Cream, Plain A4.
-- **18 writing styles:** 11 print-style hands (Handlee, Kalam, Patrick Hand, Caveat, Mynerve, Covered By Your Grace, Architects Daughter, Shadows Into Light, Gochi Hand, Schoolbell, Indie Flower), 4 cursive hands (Dawning of a New Day, Cedarville, Nothing You Could Do, Homemade Apple), and 3 print fonts. Fonts are SIL OFL, except Homemade Apple (Apache 2.0); licences are in `assets/fonts/`.
-- **Every handwriting font is sized from its own measured letter height** relative to the line spacing, so all hands sit on the rules the same way.
-- The student's paper, handwriting and fine-tune settings are saved with the document.
+**Writing × paper (chosen separately).** Students pick from four curated handwriting profiles and four papers. Every card is drawn by the real renderer: writing cards show several lines of the student's own letter, paper cards show the page's real geometry.
 
-**Consistent lines, always.** Every page is a fixed baseline grid: text sits on lines exactly *line spacing* mm apart, and the text size never changes. Nothing is shrunk to squeeze a long letter onto one page; it continues on page 2 with identical spacing. Handwriting variation is centred, so every line holds a similar amount of text. A test checks short and long letters on several papers for this.
+| Writing profile | Font | Character |
+|---|---|---|
+| Neat & clear | Handlee | upright, even, easy to read |
+| Quick & flowing | Caveat | slanted, uses the font's contextual alternates |
+| Everyday ballpoint | Mynerve | casual pen, contextual alternates |
+| Steady & rounded | Kalam | rounded, darker ink |
 
-**Fine-tune (gear icon).** The gear appears on the selected handwriting or paper card in the wizard, and as *Fine-tune* in the studio. It opens a sheet over a blurred background, with a live preview of the real page. It is free and is saved with the document.
-- *Writing:* size, letter height, letter width, letter spacing, word spacing, slant, pen thickness, ink colour.
-- *Humanizer:* Neat / Natural / Rushed presets, letter wobble, word variation, baseline drift, slant variation, ink pressure, margin drift, retraced strokes, number of crossed-out corrections (0–6), and a variation seed ("Write it differently").
-- *Page:* line spacing, first-line position, left and right margins, paragraph indent, section gap, signature space, alignment.
+| Paper | Geometry |
+|---|---|
+| Classmate | single-ruled notebook, 7.6 mm lines, red margin |
+| Black Margin | grey rules, black margin, 8.0 mm lines |
+| Double margin | school page with margins on both sides, 7.8 mm lines |
+| Warm cream | unruled; line spacing comes from the font's own metrics |
 
-**Human handwriting (`js/doc/handwriting.js`).** Every letter is placed separately with its own transform (height, width, slant, rotation). The same matrix is used by the SVG preview and the PDF, which writes it with raw PDF operators so it can also stroke the pen. The variation comes per word and per glyph:
-- **Glyph shape:** size, rotation and slant, so no two "e"s match.
-- **Ink:** pressure changes, and occasional retraced strokes.
-- **Lines:** a gentle baseline drift that stays on the ruled line (±0.35 mm at most), and a ragged left margin.
-- **Real slips:** a word written wrong (swapped or dropped letters, or an abandoned half-word), struck through, then rewritten correctly.
+The other fonts and papers remain in a developer library (Lab only). Fonts are SIL OFL, except Homemade Apple (Apache 2.0); licences are in `assets/fonts/`.
 
-All of it is seeded per document, so the preview and the PDF are identical. In the studio, **Neat / Natural / Rushed** sets how strong the effect is, and Fine-tune adjusts each part separately; Neat has no slips. Facts (names, dates, numbers) are never "misspelled".
+**Metric typography: same size on every line and page.** Each font's x-height, cap height, ascender and descender are measured from its real outlines (fontkit), not guessed from the font size. The base size is then set so that the x-height is a fixed fraction of the line spacing. All four profiles therefore look the same size (x-height about 2.9–3.0 mm on Classmate rules), capped so ascenders and descenders never collide with the next line.
+- **Ruled paper:** the paper's rules set the baseline grid.
+- **Unruled paper:** spacing comes from the font's metrics.
+
+The size **never** shrinks for a long letter: it continues on page 2 with the same size and grid. Tests check this.
+
+**Glyph pipeline (`js/doc/letter-layout.js`, `js/doc/handwriting.js`).**
+1. **Shape.** Each word is shaped with fontkit, which applies kerning and OpenType contextual alternates (Caveat, Mynerve).
+2. **Wrap and paginate** using the nominal shaped widths.
+3. **Humanize.** Only after the lines are final does the handwriting layer place each glyph by its glyph ID. Humanizing can never change which words share a line, and a final fit pass keeps every line inside the margin.
+
+The writing personality is coherent rather than random jitter:
+- **Smooth noise along the line:** neighbouring letters share a tendency in baseline, height, rotation, spacing, slant and ink.
+- **Personal variants:** each letter picks one of a few variants per document, so repeated letters differ but stay within limits.
+- **Word and line variation:** a per-word spacing and ink density, a gentle line drift (±0.35 mm, stays on the rule) and a slightly ragged left margin.
+- **Slips:** a few words written wrongly, struck through and rewritten. Neat has none, and names, dates and numbers are never touched.
+
+Everything comes from one seeded hash, never `Math.random`, so the preview and the PDF get identical instructions.
+
+**Preview = PDF.**
+- **Preview:** the SVG draws each glyph's real outline from the font file.
+- **PDF:** the export embeds the same font in full (vector, never rasterized, with a ToUnicode map so the text stays selectable) and draws the same glyph IDs with the same matrix.
+
+**Students see three choices only:** writing, paper, and Neat / Natural / Rushed. Changing any of them is free and never calls the AI.
+
+**Handwriting Lab (`#/dev?dev=1`, or `#/dev` in mock mode).** For developers only:
+- **Pick and compare:** any library profile, paper, humanizer preset, sample (standard / quality / long multi-page), seed and zoom.
+- **Diagnostics:** font file, family and PostScript name, FontFace load status, OpenType features, measured vs OS/2 metrics, base size, x-height on the page, line-spacing source, baseline lift, writing width, page and glyph counts, seed and persona.
+- **Fine-tune:** the full precision sheet (writing, humanizer, page).
+- **Export & verify PDF:** checks that the PDF embeds the profile's own font and no standard font, and fails loudly otherwise.
+- **Quality grid:** the four profiles × four papers with the same text and seed.
+- **Check AI.**
+
+The same grid as real PDFs + PNGs + a contact sheet, from the command line:
+
+```bash
+node tools/quality-sheet.mjs test-output/quality
+```
 
 **Demo templates.** Fields come from a millimetre manifest (`js/doc/templates.js`). The fictional backgrounds are generated from it (`node tools/build-templates.mjs`). Every page always carries the SAMPLE marking. There are no signatures, seals, registration numbers or practitioner identities.
 
@@ -155,12 +198,12 @@ index.html, admin.html, css/, assets/ (brand, fonts, templates), vendor/ (pdf-li
 js/config.js            all public configuration
 js/core/                api client, session, state, dom, haptics
 js/ui/                  aurora background, sheets, toasts, icons
-js/views/               landing, access, home, wizards (tone grid), studio, history, referral, dev font lab
-js/doc/                 fonts, papers & writing styles, handwriting humaniser, layouts, SVG + PDF renderers, templates
+js/views/               landing, access, home, wizards (tone grid), studio, history, referral, Handwriting Lab
+js/doc/                 fonts (shaping + measured metrics), papers & writing profiles, glyph-level handwriting layer, layouts, SVG + PDF renderers, templates
 js/mock/                in-browser Apps Script runtime + mock Mistral
 apps-script/            backend (Router, Tokens, Generations, Letters (Mistral), Requests, Referrals, Admin, Drive, Messaging, Sheets, Setup)
 tests/                  node tests + Playwright walkthroughs
-tools/                  dev server (+ Mistral proxy), template background builder
+tools/                  dev server (+ Mistral proxy), template background builder, quality-sheet (profile × paper PDFs)
 ```
 
 ## Status: real vs. mocked
@@ -168,6 +211,8 @@ tools/                  dev server (+ Mistral proxy), template background builde
   - wizard, five-tone prompt, handwriting engine, PDF export with embedded fonts
   - token accounting, idempotency, the two-model fallback chain, fact guard
   - referral rules, admin operations
-  - All of this runs the real backend code in mock mode, with 52 unit tests and two browser walkthroughs.
+  - metric typography, glyph-level humanizer, pagination without shrinking, preview/PDF parity
+  - All of this runs the real backend code in mock mode, with 31 Node tests and two browser walkthroughs.
+  - Generation source is labelled honestly in the studio: **Written by AI** (Mistral), **Mock AI (test mode)** or **Standard letter** (fallback).
 - **Written to Mistral's documented API but not called live from this build environment** (its network blocks api.mistral.ai): the real Mistral request. Test it with your key via `.env` + `npm run dev`, or after deploying.
 - **Not executed against Google here:** the Apps Script deployment itself, and the WhatsApp Cloud API path.

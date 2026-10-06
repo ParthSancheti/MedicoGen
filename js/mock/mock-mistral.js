@@ -62,7 +62,7 @@ export function mockMistralResponse(mode, request) {
   if (mode === 'invent') letter.paragraphs[0] += ' Dr. Mehta at City Hospital diagnosed me with typhoid.';
   const content = mode === 'garbage' ? '{"subject": "Leave", "paragr' : JSON.stringify(letter);
   return respond(200, {
-    id: 'mock-' + Date.now(), object: 'chat.completion', model: request?.model || 'mock',
+    id: 'mock-composer', object: 'chat.completion', model: 'mock-composer',
     choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
   });

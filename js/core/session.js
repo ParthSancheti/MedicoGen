@@ -48,7 +48,7 @@ export const session = {
   get lastStyle() { return read('style', 'notebook'); },
   get lastPaper() { return read('paper', 'classmate'); },
   set lastPaper(v) { write('paper', v); },
-  get lastWriting() { return read('writing', 'handlee'); },
+  get lastWriting() { return read('writing', 'neat'); },
   set lastWriting(v) { write('writing', v); },
   set lastStyle(v) { write('style', v); },
 

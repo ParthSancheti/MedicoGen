@@ -102,7 +102,8 @@ function composeLetter_(input) {
     if (res.ok) {
       var content = sanitizeLetterContent_(res.data, false);
       var problem = content ? factGuard_(content, input) : 'shape';
-      if (!problem) return { content: content, source: 'mistral', model: attempts[i].model };
+      // 'mock' = the local mock composer answered (no real AI was involved)
+      if (!problem) return { content: content, source: res.mock ? 'mock' : 'mistral', model: attempts[i].model };
       last = { reason: 'guard_' + problem };
       continue; // a second model may phrase it cleanly
     }
@@ -228,7 +229,7 @@ function callMistral_(input, model, useSchema) {
   out = String(out || '').replace(/^```(?:json)?\s*|\s*```$/g, '');
   var data = parseJson_(out, null);
   if (!data) return { ok: false, reason: 'bad_json' };
-  return { ok: true, data: data };
+  return { ok: true, data: data, mock: /^mock/.test(String(json.model || '')) };
 }
 
 /** Normalises any letter content (AI output or student edits). Returns null if unusable. */

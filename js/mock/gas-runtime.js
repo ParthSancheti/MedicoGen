@@ -169,6 +169,7 @@ export function createRuntime(state, hooks = {}) {
     },
     UrlFetchApp: {
       fetch: (url, opts = {}) => {
+        hooks.onFetch && hooks.onFetch(String(url));
         if (String(url).includes('api.mistral.ai')) {
           const mode = state.props.MOCK_AI || 'ok';
           const request = JSON.parse(opts.payload || '{}');

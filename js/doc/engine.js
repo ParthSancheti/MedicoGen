@@ -53,11 +53,11 @@ export async function getRegistry() {
 
 export function fontsFor(doc) {
   if (doc.style && !doc.paper) migrateStyle(doc);
-  return doc.kind === 'demo' ? templateFonts() : styleFonts(doc.writing || 'handlee').concat(paperFonts(doc.paper || 'classmate'));
+  return doc.kind === 'demo' ? templateFonts() : styleFonts(doc.writing || 'neat').concat(paperFonts(doc.paper || 'classmate'));
 }
 
 function migrateStyle(doc) {
-  if (doc.style === 'notebook') { doc.paper = 'classmate'; doc.writing = 'kalam'; }
+  if (doc.style === 'notebook') { doc.paper = 'classmate'; doc.writing = 'steady'; }
   else if (doc.style === 'academic') { doc.paper = 'plain'; doc.writing = 'academic'; }
   else if (doc.style === 'modern') { doc.paper = 'plain'; doc.writing = 'modern'; }
   else if (doc.style === 'classic') { doc.paper = 'cream'; doc.writing = 'classic'; }
@@ -71,7 +71,7 @@ export async function layoutDocument(doc, { dev = false } = {}) {
   const reg = await getRegistry();
   await reg.ensure(fontsFor(doc));
   if (doc.kind === 'demo') return layoutTemplate({ templateId: doc.templateId, fields: doc.fields || {}, registry: reg, dev });
-  return layoutLetter({ input: doc.input, content: doc.content, paperId: doc.paper || 'classmate', writingId: doc.writing || 'handlee', registry: reg, seed: doc.id || 'preview', settings: doc.settings || null, humanize: doc.humanize });
+  return layoutLetter({ input: doc.input, content: doc.content, paperId: doc.paper || 'classmate', writingId: doc.writing || 'neat', registry: reg, seed: doc.id || 'preview', settings: doc.settings || null, humanize: doc.humanize });
 }
 
 export function pagesToSvg(pages, opts) {

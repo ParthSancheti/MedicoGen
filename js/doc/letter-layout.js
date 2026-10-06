@@ -6,10 +6,10 @@
  * absolutely positioned drawing items (mm). Both the SVG preview and the PDF exporter draw exactly
  * these items, so they cannot disagree about line breaks, spacing or page breaks.
  */
-import { A4, PAPERS, WRITING, resolveSettings } from './styles.js';
+import { A4, PAPERS, WRITING, resolveSettings, handTypography } from './styles.js';
 import { PT } from './fonts.js';
 import { seededRandom, wrapTokens, longDate } from './text.js';
-import { handTokens, lineWander, emitHand, canTypo } from './handwriting.js';
+import { shapeToken, emitHandLine, canTypo, typo } from './handwriting.js';
 
 /* ---------- content → blocks ---------- */
 
@@ -65,24 +65,26 @@ export function paperFonts(paperId) {
  */
 export function layoutLetter({ input, content, paperId, writingId, registry, seed = 'mg', settings = null, humanize }) {
   const paper = PAPERS[paperId] || PAPERS.classmate;
-  const writing = WRITING[writingId] || WRITING.handlee;
+  const writing = WRITING[writingId] || WRITING.neat;
   const raw = settings ? JSON.parse(JSON.stringify(settings)) : {};
   if (humanize && !(raw.human && raw.human.preset)) raw.human = { ...(raw.human || {}), preset: humanize };
   const S = resolveSettings(raw, paper, writing);
   const warnings = new Set();
-  const rng = seededRandom(seed + '|' + S.human.seed + '|' + paper.id + writing.id);
+  const docSeed = seed + '|' + S.human.seed + '|' + writing.id;   // personality (letter variants) is per document
   const hand = writing.type === 'hand';
   const bodyFont = writing.fonts.body, boldFont = writing.fonts.bold;
-  const lineH = S.page.lineGap;
 
-  // Handwriting is sized from its measured body height so every font sits the same way on the rules.
-  const size = hand
-    ? (lineH * 0.42 * S.font.size * writing.scale) / (registry.bodyHeight(bodyFont) * PT)
-    : writing.size * S.font.size;
+  // Typography is fixed for the whole document. Handwriting is sized from measured metrics so all
+  // profiles look equally large; it never shrinks to fit (long letters continue on the next page).
+  const typo_ = hand ? handTypography(registry.metrics(bodyFont), writing, paper, S.page, S.font.size) : null;
+  const lineH = hand ? typo_.lineGap : S.page.lineGap;
+  S.page.lineGap = lineH;
+  const size = hand ? typo_.sizePt : writing.size * S.font.size;
+  const sizeMm = size * PT;
   const F = hand ? S.font : { ...S.font, width: 1, height: 1, letterSpacing: 0, wordSpacing: 1, slant: 0 };
 
   const left = S.page.marginLeft, right = A4.w - S.page.marginRight, width = right - left;
-  const lift = paper.kind === 'plain' ? 0 : paper.lift * (lineH / 7.6);
+  const lift = hand ? typo_.lift : paper.kind === 'plain' ? 0 : paper.lift * (lineH / 7.6);
   const firstBaseline = S.page.first - lift;
   const lastBaseline = paper.last - lift;
 
@@ -101,18 +103,30 @@ export function layoutLetter({ input, content, paperId, writingId, registry, see
     const eligible = words.map((w, i) => (i > 3 && canTypo(w) ? i : -1)).filter((i) => i >= 0);
     while (slips.size < Math.min(S.human.errors, eligible.length)) slips.add(eligible[Math.floor(pick() * eligible.length)]);
   }
-  const wordIndex = { n: 0 };
+  let wordNo = 0;
 
-  const tokenize = (text, fontId, opts = {}) => hand
-    ? handTokens(clean(fontId, text), { fontId, size, registry, rng, human: S.human, font: F, slips: opts.body ? slips : null, wordIndex: opts.body ? wordIndex : null })
-    : printTokens(clean(fontId, text), fontId, size, registry);
+  // Wrapping uses shaped, un-humanised widths: humanisation can never change line breaks.
+  const tokenize = (text, fontId, opts = {}) => {
+    const words = clean(fontId, text).split(/\s+/).filter(Boolean);
+    if (!hand) return printTokens(words.join(' '), fontId, size, registry);
+    const out = [];
+    for (const w of words) {
+      if (opts.body && slips.has(wordNo)) {
+        const bad = typo(w, docSeed + wordNo);
+        if (bad) out.push(shapeToken(registry, fontId, bad, sizeMm, F, { struck: true }));
+      }
+      if (opts.body) wordNo++;
+      out.push(shapeToken(registry, fontId, w, sizeMm, F));
+    }
+    return out;
+  };
 
   const splitToken = (tok, maxW) => {
+    const measure = (t) => (hand ? shapeToken(registry, tok.f, t, sizeMm, F).w : registry.width(tok.f, t, size));
     let cut = tok.text.length - 1;
-    while (cut > 1 && registry.width(tok.f, tok.text.slice(0, cut) + '-', tok.size) * F.width > maxW) cut--;
+    while (cut > 1 && measure(tok.text.slice(0, cut) + '-') > maxW) cut--;
     const headText = tok.text.slice(0, cut) + '-', restText = tok.text.slice(cut);
-    const remake = (t) => (hand ? handTokens(t, { fontId: tok.f, size: tok.size, registry, rng, human: S.human, font: F })[0]
-      : { ...tok, text: t, w: registry.width(tok.f, t, tok.size) });
+    const remake = (t) => (hand ? shapeToken(registry, tok.f, t, sizeMm, F) : { ...tok, text: t, w: registry.width(tok.f, t, size) });
     return [remake(headText), restText ? remake(restText) : null];
   };
 
@@ -181,28 +195,45 @@ export function layoutLetter({ input, content, paperId, writingId, registry, see
     }
   }
 
-  /* emit */
+  /* emit: pagination is final, now each line is written by hand */
   const ink = S.font.ink;
+  let rowNo = 0;
+  const occurrences = new Map(); // per-document letter counts → which personal variant each letter uses
   const out = pages.map((rows, pi) => {
     const items = pageDecor(paper, S, pi, pages.length, registry, writing, size);
     for (const { row, y: baseline, unitId, underline } of rows) {
       if (hand) {
-        const wander = lineWander(rng, S.human.line);
-        const drift = (rng() - 0.5) * 1.0 * S.human.margin;  // ragged left margin, never into the margin line
-        let startX = 0, endX = 0;
+        let first = null, end = 0;
         row.parts.forEach((part, k) => {
-          const x0 = part.x + (k === 0 && part.align !== 'right' ? Math.max(0, drift) - (drift < 0 ? drift * 0.3 : 0) : 0);
-          if (k === 0) startX = x0;
-          endX = emitHand(items, part.tokens, { x0, baseline, wander, color: ink, blockId: unitId, rng, weight: S.font.weight });
+          if (!part.tokens.length) return;
+          const r = emitHandLine(items, part.tokens, {
+            x0: part.x, baseline, rightLimit: right + 0.4, seed: docSeed + '|p' + pi + '|r' + rowNo + '|' + k, docSeed,
+            persona: writing.persona, human: S.human, F, color: ink, density: writing.density, weight: S.font.weight,
+            blockId: unitId, PT, upm: registry.metrics(part.tokens[0].f).unitsPerEm, align: part.align, occurrences
+          });
+          if (!first) first = r;
+          end = r.end;
         });
-        if (underline) items.push({ t: 'line', x1: startX - 0.4, y1: baseline + 1.3 + wander(0), x2: endX + 0.6, y2: baseline + 1.3 + wander(endX - startX) + (rng() - 0.5) * 0.4, sw: 0.26 + S.font.weight * 0.5, color: ink, opacity: 0.75 });
+        rowNo++;
+        if (underline && first) items.push({ t: 'line', x1: first.start - 0.4, y1: baseline + 1.1 + first.wander(0), x2: end + 0.6, y2: baseline + 1.1 + first.wander(end - first.start), sw: 0.26 + S.font.weight * 0.5, color: ink, opacity: 0.75 });
       } else {
         for (const part of row.parts) emitPart(items, part, baseline, unitId, part.label ? (writing.labelInk === writing.ink ? ink : writing.labelInk) : ink);
       }
     }
-    return { w: A4.w, h: A4.h, items };
+    return { w: A4.w, h: A4.h, items, glyphs: glyphDefs(items, registry) };
   });
-  return { pages: out, warnings: [...warnings], paper: paper.id, writing: writing.id, settings: S, sizePt: size };
+  return { pages: out, warnings: [...warnings], paper: paper.id, writing: writing.id, settings: S, sizePt: size, typography: typo_ };
+}
+
+/** Outline paths for every glyph used on a page (the SVG preview draws these; the PDF uses glyph IDs). */
+function glyphDefs(items, registry) {
+  const defs = {};
+  for (const it of items) {
+    if (it.t !== 'glyph') continue;
+    const key = it.f + '-' + it.gid;
+    if (!(key in defs)) defs[key] = registry.glyphPath(it.f, it.gid);
+  }
+  return defs;
 }
 
 /** Printed styles: whole words, measured as typeset. */

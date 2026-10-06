@@ -10,10 +10,11 @@ const PNG_1PX = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAA
 function boot(props = {}) {
   const state = emptyState();
   Object.assign(state.props, { MOCK_MODE: 'true', MISTRAL_API_KEY: 'mock', ADMIN_PASSWORD: 'admin', APP_URL: 'https://example.test', ...props });
-  const be = loadBackend(sources, createRuntime(state));
+  const fetches = [];
+  const be = loadBackend(sources, createRuntime(state, { onFetch: (u) => fetches.push(u) }));
   be.setupMock_();
   const call = (action, p = {}) => be.handle_({ action, ...p });
-  return { state, call };
+  return { state, call, fetches };
 }
 
 const letterInput = (over = {}) => ({
@@ -42,7 +43,7 @@ test('letter generation consumes once per idempotency key and stops at zero', ()
   const id = gid();
   const a = call('letter.generate', { code: 'MG-TEST-001', generationId: id, input: letterInput(), style: 'notebook' });
   assert.equal(a.ok, true, JSON.stringify(a));
-  assert.equal(a.data.generation.source, 'mistral');
+  assert.equal(a.data.generation.source, 'mock', 'the mock composer is labelled honestly');
   assert.equal(a.data.token.remaining, 2);
   assert.ok(a.data.generation.content.paragraphs.length >= 2);
   const replay = call('letter.generate', { code: 'MG-TEST-001', generationId: id, input: letterInput(), style: 'notebook' });
@@ -226,4 +227,27 @@ test('precision settings are clamped and persisted, and are free to change', () 
   assert.equal(g.generation.settings.human.preset, 'neat');
   assert.equal(g.generation.paper, 'graph');
   assert.equal(g.token.remaining, 2);
+});
+
+test('changing handwriting, paper or fine-tune settings never calls the AI or spends an attempt', () => {
+  const { call, fetches } = boot();
+  const id = gid();
+  call('letter.generate', { code: 'MG-TEST-001', generationId: id, input: letterInput(), paper: 'classmate', writing: 'neat' });
+  const aiCalls = fetches.filter((u) => u.includes('api.mistral.ai')).length;
+  assert.equal(aiCalls, 1, 'one AI call to write the letter');
+  for (const [paper, writing] of [['school', 'flowing'], ['cream', 'ballpoint'], ['black_margin', 'steady']]) {
+    const r = call('document.save', { code: 'MG-TEST-001', generationId: id, paper, writing, settings: { human: { preset: 'rushed' } } });
+    assert.equal(r.ok, true);
+  }
+  assert.equal(fetches.filter((u) => u.includes('api.mistral.ai')).length, aiCalls, 'no further AI calls');
+  const g = call('generation.get', { code: 'MG-TEST-001', generationId: id }).data;
+  assert.equal(g.token.remaining, 2, 'still only one attempt used');
+  assert.equal(g.generation.writing, 'steady');
+  assert.equal(g.generation.paper, 'black_margin');
+});
+
+test('generation source is honest: mock, fallback (no key / quota)', () => {
+  assert.equal(boot().call('letter.generate', { code: 'MG-TEST-001', generationId: gid(), input: letterInput() }).data.generation.source, 'mock');
+  assert.equal(boot({ MISTRAL_API_KEY: '' }).call('letter.generate', { code: 'MG-TEST-001', generationId: gid(), input: letterInput() }).data.generation.source, 'fallback');
+  assert.equal(boot({ MOCK_AI: '429' }).call('letter.generate', { code: 'MG-TEST-001', generationId: gid(), input: letterInput() }).data.generation.source, 'fallback');
 });

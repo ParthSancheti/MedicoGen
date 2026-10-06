@@ -35,13 +35,13 @@ export async function renderPdf({ pages, registry, PDFLib, fontkit, loadImage, m
   doc.setCreationDate(new Date());
 
   const fontIds = new Set();
-  pages.forEach((p) => p.items.forEach((it) => it.t === 'text' && fontIds.add(it.f)));
+  pages.forEach((p) => p.items.forEach((it) => (it.t === 'text' || it.t === 'glyph') && fontIds.add(it.f)));
   const embedded = {};
   for (const id of fontIds) {
     const entry = registry.get(id); // throws if missing — by design
     // Full embedding: pdf-lib's subsetter drops glyph outlines for some fonts (Kalam among them),
     // which would print blank letters. A complete font is larger but always correct.
-    embedded[id] = await doc.embedFont(entry.bytes, { subset: false, customName: entry.font.postscriptName });
+    embedded[id] = await doc.embedFont(entry.bytes, { subset: false, customName: entry.font.postscriptName, features: entry.meta.features });
   }
   const images = {};
 
@@ -68,6 +68,11 @@ export async function renderPdf({ pages, registry, PDFLib, fontkit, loadImage, m
           images[it.href] = /\.png($|\?)/i.test(it.href) ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
         }
         pdfPage.drawImage(images[it.href], { x: it.x * MM, y: H - (it.y + it.h) * MM, width: it.w * MM, height: it.h * MM });
+      } else if (it.t === 'glyph') {
+        // register the shaped word with pdf-lib (ToUnicode/widths include contextual alternates),
+        // then draw this exact glyph ID with the shared matrix
+        if (it.word) embedded[it.f].encodeText(it.word);
+        drawGlyphRun(PDFLib, pdfPage, embedded[it.f], it, H, PDFLib.PDFHexString.of(it.gid.toString(16).padStart(4, '0')));
       } else if (it.t === 'dot') {
         pdfPage.drawCircle({ x: it.x * MM, y: H - it.y * MM, size: it.r * MM, color: hexToRgb(PDFLib, it.fill) });
       } else if (it.t === 'text') {
@@ -87,7 +92,7 @@ export async function renderPdf({ pages, registry, PDFLib, fontkit, loadImage, m
  * with raw PDF operators so it matches the SVG preview exactly (pdf-lib's drawText cannot scale
  * glyphs or stroke them).
  */
-function drawGlyphRun(PDFLib, page, font, it, H) {
+function drawGlyphRun(PDFLib, page, font, it, H, encoded) {
   const P = PDFLib;
   const [a, b, c, d] = glyphMatrix(it);
   const key = page.node.newFontDictionary(font.name, font.ref);
@@ -101,6 +106,6 @@ function drawGlyphRun(PDFLib, page, font, it, H) {
     ops.push(P.setStrokingColor(col), P.setLineWidth(it.stroke * MM), P.setLineJoin(P.LineJoinStyle.Round),
       P.setTextRenderingMode(P.TextRenderingMode.FillAndOutline));
   }
-  ops.push(P.setFontAndSize(key, it.size), P.setTextMatrix(a, b, c, d, it.x * MM, H - it.y * MM), P.showText(font.encodeText(it.s)), P.endText(), P.popGraphicsState());
+  ops.push(P.setFontAndSize(key, it.size), P.setTextMatrix(a, b, c, d, it.x * MM, H - it.y * MM), P.showText(encoded || font.encodeText(it.s)), P.endText(), P.popGraphicsState());
   page.pushOperators(...ops);
 }

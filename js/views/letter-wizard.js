@@ -5,7 +5,9 @@ import { session } from '../core/session.js';
 import { iconEl } from '../ui/icons.js';
 import { app } from '../core/state.js';
 import { PAPERS, WRITING, PAPER_ORDER, WRITING_ORDER } from '../doc/styles.js';
-import { openFineTune, gearButton } from './fine-tune.js';
+import { openFineTune, gearButton, previewCrop } from './fine-tune.js';
+
+const DEV = new URLSearchParams(location.search).get('dev') === '1';
 import { longDate } from '../doc/text.js';
 import { runWizard, textField, choiceChips } from './wizard.js';
 import { generate } from './generate.js';
@@ -48,8 +50,8 @@ export function render(root, { navigate }) {
     letterType: 'absence',
     date: todayIso(),
     tone: 'formal',
-    paper: session.lastPaper || 'classmate',
-    writing: session.lastWriting || 'handlee',
+    paper: PAPER_ORDER.includes(session.lastPaper) ? session.lastPaper : 'classmate',
+    writing: WRITING_ORDER.includes(session.lastWriting) ? session.lastWriting : 'neat',
     student: { name: profile.name || '', college: profile.college || '', department: profile.department || '', year: profile.year || '', division: profile.division || '', rollNo: profile.rollNo || '' },
     absence: { from: '', to: '', reasonCategory: '', reason: '', documents: false },
     recipient: { name: profile.hodName || '', designation: profile.designation || 'Head of Department', salutation: profile.salutation || 'Sir' }
@@ -193,11 +195,11 @@ export function render(root, { navigate }) {
       }
     },
     {
-      key: 'writing', eyebrow: 'Typography', title: 'Handwriting style', text: 'Pick a hand. Tap the gear on your pick to fine-tune height, slant, pen and mistakes.',
+      key: 'writing', eyebrow: 'Handwriting', title: 'Whose handwriting?', text: 'Four real hands. Each preview is your letter, written exactly as it will print.',
       render: (d, ui) => pickerStep(d, ui, 'writing')
     },
     {
-      key: 'paper', eyebrow: 'Page', title: 'Paper style', text: 'Choose the sheet. The gear lets you set line spacing, margins and more.',
+      key: 'paper', eyebrow: 'Paper', title: 'Which paper?', text: 'Pick the sheet it is written on. The handwriting stays the same size on every paper.',
       render: (d, ui) => pickerStep(d, ui, 'paper')
     },
     {
@@ -212,7 +214,7 @@ export function render(root, { navigate }) {
           ['Dates', n === 1 ? longDate(d.absence.from) : `${longDate(d.absence.from)} – ${longDate(d.absence.to)} (${n} days)`],
           ['Reason', d.absence.reason],
           ['To', [d.recipient.name, d.recipient.designation].filter(Boolean).join(', ')],
-          ['Paper', PAPERS[d.paper || 'classmate'].name + ' · ' + WRITING[d.writing || 'kalam'].name + ' (' + ((TONES.find((t) => t.id === d.tone) || TONES[0]).label.toLowerCase()) + ')']
+          ['Paper', PAPERS[d.paper || 'classmate'].name + ' · ' + (WRITING[d.writing] || WRITING.neat).name + ' (' + ((TONES.find((t) => t.id === d.tone) || TONES[0]).label.toLowerCase()) + ')']
         ];
         return h('div.stack',
           h('div.card', h('dl.summary-dl', rows.map(([k, v]) => h('div', h('dt', k), h('dd', v || '—'))))),
@@ -250,13 +252,13 @@ function pickerStep(d, ui, kind) {
     doc: tuneDoc(d), tab: kind === 'paper' ? 'page' : 'font',
     onChange: (settings) => { d.settings = settings; ui.changed(); cards.forEach((c, id) => drawPreview(c, id)); }
   });
-  const drawPreview = (card, id) => pickerPreview(card.querySelector('.preview'), kind === 'paper' ? id : d.paper || 'classmate', kind === 'writing' ? id : d.writing || 'handlee', d);
+  const drawPreview = (card, id) => pickerPreview(card.querySelector('.preview'), kind === 'paper' ? id : d.paper || 'classmate', kind === 'writing' ? id : d.writing || 'neat', d, kind === 'paper');
   const mark = () => cards.forEach((card, id) => {
     const on = d[kind] === id;
     card.classList.toggle('on', on);
     card.setAttribute('aria-pressed', String(on));
     card.querySelector('.gear-btn')?.remove();
-    if (on) card.prepend(gearButton(tune));
+    if (on && DEV) card.prepend(gearButton(tune)); // precision controls are a developer tool (?dev=1)
   });
   ids.forEach((id) => {
     const m = meta[id];
@@ -281,7 +283,7 @@ function pickerStep(d, ui, kind) {
 function tuneDoc(d) {
   const days = Math.max(1, daysBetween(d.absence.from, d.absence.to) || 1);
   return {
-    kind: 'letter', id: 'tune-preview', paper: d.paper || 'classmate', writing: d.writing || 'handlee', settings: d.settings || null,
+    kind: 'letter', id: 'tune-preview', paper: d.paper || 'classmate', writing: d.writing || 'neat', settings: d.settings || null,
     input: { ...d, absence: { ...d.absence, days } },
     content: { subject: 'Application for leave of absence', salutation: `Respected ${d.recipient.salutation || 'Sir'},`,
       paragraphs: ['I am writing to request leave for the above days. I will complete all the lectures and practical work that I miss with the help of my classmates.'],
@@ -289,16 +291,8 @@ function tuneDoc(d) {
   };
 }
 
-/** Zooms a picker preview into the subject and first lines, where the handwriting is readable. */
-export function previewCrop(host) {
-  const svg = host.querySelector('svg');
-  if (!svg) return;
-  svg.setAttribute('viewBox', '18 58 122 106');
-  svg.setAttribute('preserveAspectRatio', 'xMinYMin slice');
-}
-
 /** Style card preview: the top of the real page, rendered with the student's own details. */
-async function pickerPreview(host, paperId, writingId, d) {
+async function pickerPreview(host, paperId, writingId, d, whole = false) {
   const { layoutDocument, pagesToSvg } = await import('../doc/engine.js');
   const days = Math.max(1, daysBetween(d.absence.from, d.absence.to) || 1);
   const period = days === 1 ? longDate(d.absence.from) : `${longDate(d.absence.from)} to ${longDate(d.absence.to)}`;
@@ -308,13 +302,13 @@ async function pickerPreview(host, paperId, writingId, d) {
     content: {
       subject: `Application for leave ${d.absence.from ? (days === 1 ? 'on ' : 'from ') + period : ''}`.trim(),
       salutation: `Respected ${d.recipient.salutation || 'Sir'},`,
-      paragraphs: ['I am writing to request leave for the above days. Your letter will look just like this, in the same handwriting and on the same paper.'],
+      paragraphs: ['I am a student of ' + (d.student.year || 'Third Year') + ' in the Department of ' + (d.student.department || 'Computer Engineering') + '. I was unable to attend my lectures and practicals on these days, and I request you to kindly grant me leave for this period.'],
       closing: 'Thanking you.', signoff: 'Yours obediently,'
     }
   };
   try {
     const { pages } = await layoutDocument(doc);
     host.innerHTML = pagesToSvg([pages[0]])[0];
-    previewCrop(host);
+    previewCrop(host, whole, pages[0]);
   } catch { /* preview optional */ }
 }

@@ -126,20 +126,9 @@ try {
   await page.waitForSelector('.style-card .preview svg');
   await page.waitForTimeout(600);
   await shot(page, '09b-wizard-writing');
-  await page.locator('.style-card', { hasText: 'Caveat' }).click();
-  // fine-tune: gear on the selected card → blurred sheet with live preview
-  await page.locator('.style-card.on .gear-btn').click();
-  await page.waitForSelector('.sheet-root.blur .ft-preview svg');
-  await page.getByRole('slider', { name: 'Letter height' }).evaluate((el) => { el.value = '1.3'; el.dispatchEvent(new Event('input', { bubbles: true })); });
-  await page.getByRole('tab', { name: 'Humanizer' }).click();
-  await page.getByRole('slider', { name: 'Corrections (crossed-out slips)' }).evaluate((el) => { el.value = '3'; el.dispatchEvent(new Event('input', { bubbles: true })); });
-  await page.getByRole('tab', { name: 'Page' }).click();
-  await page.waitForTimeout(700);
-  await shot(page, '09c-fine-tune');
-  await page.getByRole('button', { name: 'Done' }).click();
-  await page.waitForTimeout(400);
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('mg.draft')).data.settings);
-  assert(saved && saved.font.height === 1.3 && saved.human.errors === 3, 'fine-tune saved to the draft: ' + JSON.stringify(saved));
+  await page.locator('.style-card', { hasText: 'Quick & flowing' }).click();
+  // precision controls are developer-only: students never see the gear
+  assert(await page.locator('.gear-btn').count() === 0, 'no fine-tune gear for students');
   await tapContinue(page);
   // paper
   await page.waitForSelector('.style-card .preview svg');
@@ -158,7 +147,7 @@ try {
   log('double tap consumed exactly one generation');
 
   // edit a sentence
-  await page.locator('.page-frame text[data-block="p0"]').first().click();
+  await page.locator('.page-frame rect.hit[data-block="p0"]').first().click();
   await page.waitForSelector('.sheet .editor');
   await page.getByLabel('Paragraph 1').fill('I am a student of Third Year. I could not attend college from 12 September 2026 to 14 September 2026 because I had high fever.');
   await shot(page, '13-editor');
@@ -166,19 +155,26 @@ try {
   await page.waitForTimeout(1500);
   assert((await page.textContent('#allowance')).includes('2 left'), 'edit is free');
 
-  // switch style → classic, export
+  // developer fine-tune (?dev=1): blurred sheet with live preview, saved with the document, free
+  const hash = await page.evaluate(() => location.hash);
+  await page.goto(BASE + '?dev=1' + hash);
+  await page.waitForSelector('.page-frame svg', { timeout: 20000 });
+  await page.getByRole('button', { name: 'Fine-tune' }).first().click();
+  await page.waitForSelector('.sheet-root.blur .ft-preview svg');
+  await page.getByRole('slider', { name: 'Letter height' }).evaluate((el) => { el.value = '1.3'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.getByRole('tab', { name: 'Humanizer' }).click();
+  await page.getByRole('slider', { name: 'Corrections (crossed-out slips)' }).evaluate((el) => { el.value = '3'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.getByRole('tab', { name: 'Page' }).click();
+  await page.waitForTimeout(700);
+  await shot(page, '13a-fine-tune');
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.waitForTimeout(1500);
   const gs = await page.evaluate(async () => {
     const { api } = await import('/js/core/api.js');
     const id = location.hash.split('/').pop();
     return (await api('generation.get', { code: 'MG-TEST-001', generationId: id })).generation.settings;
   });
-  assert(gs && gs.font.height === 1.3, 'settings stored with the document');
-  await page.getByRole('button', { name: 'Fine-tune' }).first().click();
-  await page.waitForSelector('.ft-preview svg');
-  await page.getByRole('slider', { name: 'Slant', exact: true }).evaluate((el) => { el.value = '8'; el.dispatchEvent(new Event('input', { bubbles: true })); });
-  await page.waitForTimeout(600);
-  await page.getByRole('button', { name: 'Done' }).click();
-  await page.waitForTimeout(1200);
+  assert(gs && gs.font.height === 1.3 && gs.human.errors === 3, 'settings stored with the document: ' + JSON.stringify(gs));
   assert((await page.textContent('#allowance')).includes('2 left'), 'fine-tuning is free');
   await page.getByRole('radio', { name: 'Rushed' }).click();
   await page.waitForTimeout(500);

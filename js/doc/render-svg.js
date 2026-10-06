@@ -40,6 +40,16 @@ export function pageToSvg(page, { className = 'doc-page', interactive = false } 
         parts.push(`<text x="${r(x)}" y="${r(y)}" font-family="'${meta.family}'" font-weight="${meta.weight}" font-size="${r(size)}" fill="${it.color}"${op}${pen}${fit}${rot}${data}>${escapeXml(it.s)}</text>`);
         break;
       }
+      case 'glyph': {
+        // the font's own outline (same file, same glyph ID as the PDF), placed with the shared matrix
+        const k = (it.size * PT) / it.upm;
+        const [a, b, c, d] = svgMatrix(it);
+        const m = [a * k, b * k, -c * k, -d * k].map((v) => Math.round(v * 1e6) / 1e6);
+        const pen = it.stroke ? ` stroke="${it.color}" stroke-width="${r(it.stroke / k)}" stroke-linejoin="round"${it.opacity != null ? ` stroke-opacity="${it.opacity}"` : ''}` : '';
+        const data = interactive && it.b ? ` data-block="${escapeXml(it.b)}"` : '';
+        parts.push(`<use href="#${escapeXml(it.f)}-${it.gid}" transform="matrix(${m.join(' ')} ${r(it.x)} ${r(it.y)})" fill="${it.color}"${it.opacity != null ? ` fill-opacity="${it.opacity}"` : ''}${pen}${data}/>`);
+        break;
+      }
       case 'dot':
         parts.push(`<circle cx="${r(it.x)}" cy="${r(it.y)}" r="${r(it.r)}" fill="${it.fill}"/>`);
         break;
@@ -50,5 +60,25 @@ export function pageToSvg(page, { className = 'doc-page', interactive = false } 
         break;
     }
   }
-  return `<svg class="${className}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${page.w} ${page.h}" style="font-kerning:none;text-rendering:geometricPrecision" role="img" aria-label="Document page">${parts.join('')}</svg>`;
+  if (interactive) parts.push(...hitAreas(page.items));
+  const defs = page.glyphs ? Object.entries(page.glyphs).map(([key, d]) => `<path id="${escapeXml(key)}" d="${d}"/>`).join('') : '';
+  return `<svg class="${className}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${page.w} ${page.h}" style="font-kerning:none;text-rendering:geometricPrecision" role="img" aria-label="Document page">${defs ? `<defs>${defs}</defs>` : ''}${parts.join('')}</svg>`;
+}
+
+/**
+ * Handwriting is drawn glyph by glyph, so a tap often lands on the paper between strokes. When the
+ * preview is interactive, each line of a block gets a transparent tap area on top of its glyphs.
+ */
+function hitAreas(items) {
+  const lines = new Map();
+  for (const it of items) {
+    if (it.t !== 'glyph' || !it.b) continue;
+    const key = it.b + '|' + Math.round(it.y);
+    const em = it.size * PT;
+    const l = lines.get(key) || { b: it.b, x1: Infinity, x2: -Infinity, y1: Infinity, y2: -Infinity };
+    l.x1 = Math.min(l.x1, it.x); l.x2 = Math.max(l.x2, it.x + em * 0.5);
+    l.y1 = Math.min(l.y1, it.y - em * 0.75); l.y2 = Math.max(l.y2, it.y + em * 0.2);
+    lines.set(key, l);
+  }
+  return [...lines.values()].map((l) => `<rect class="hit" x="${r(l.x1)}" y="${r(l.y1)}" width="${r(l.x2 - l.x1)}" height="${r(l.y2 - l.y1)}" fill="transparent" data-block="${escapeXml(l.b)}"/>`);
 }

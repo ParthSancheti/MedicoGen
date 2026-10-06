@@ -14,7 +14,7 @@ import { app } from '../core/state.js';
 import { PAPERS, PAPER_ORDER, WRITING, WRITING_ORDER } from '../doc/styles.js';
 import { TEMPLATES, DEMO_NOTICE } from '../doc/templates.js';
 import { toDoc, docTitle } from './common.js';
-import { openFineTune } from './fine-tune.js';
+import { openFineTune, previewCrop } from './fine-tune.js';
 import { generate } from './generate.js';
 
 const dev = new URLSearchParams(location.search).get('dev') === '1';
@@ -69,11 +69,11 @@ export async function render(root, { param, navigate }) {
   // Quick realism presets + the full fine-tune sheet. Both are saved with the document.
   const humanSeg = h('div.segmented.human-ctl', { role: 'radiogroup', 'aria-label': 'Handwriting realism' });
   const tuneBtn = h('button.btn.secondary.sm', { type: 'button', onclick: () => openTune() }, iconEl('settings', 16), 'Fine-tune');
-  const humanCtl = h('div.studio-tune', humanSeg, tuneBtn);
+  const humanCtl = h('div.studio-tune', humanSeg, dev ? tuneBtn : null); // precision controls: developer mode only
   const presetOf = () => (doc.settings && doc.settings.human && doc.settings.human.preset) || 'natural';
   const renderHuman = () => {
     humanCtl.hidden = isDemo;
-    humanSeg.hidden = isDemo || WRITING[doc.writing || 'handlee'].type !== 'hand';
+    humanSeg.hidden = isDemo || (WRITING[doc.writing] || WRITING.neat).type !== 'hand';
     fill(humanSeg, ...[['neat', 'Neat'], ['natural', 'Natural'], ['rushed', 'Rushed']].map(([v, l]) => {
       const on = presetOf() === v;
       const b = h('button' + (on ? '.on' : ''), { type: 'button', role: 'radio', 'aria-checked': String(on) }, l);
@@ -109,8 +109,10 @@ export async function render(root, { param, navigate }) {
     clear(headBadges);
     if (isDemo) headBadges.append(h('span.badge.danger', 'Sample · demonstration only'), h('span.badge.neutral', TEMPLATES[doc.templateId].name));
     else {
-      headBadges.append(h('span.badge', PAPERS[doc.paper || 'classmate'].name), h('span.badge', WRITING[doc.writing || 'kalam'].name));
-      headBadges.append(gen.source === 'mistral' ? h('span.badge.success', iconEl('sparkle', 13), 'AI-written') : h('span.badge.neutral', 'Standard template'));
+      headBadges.append(h('span.badge', PAPERS[doc.paper || 'classmate'].name), h('span.badge', (WRITING[doc.writing] || WRITING.neat).name));
+      headBadges.append(gen.source === 'mistral' ? h('span.badge.success', iconEl('sparkle', 13), 'Written by AI')
+        : gen.source === 'mock' ? h('span.badge.warn', iconEl('sparkle', 13), 'Mock AI (test mode)')
+        : h('span.badge.neutral', 'Standard letter'));
       if (gen.source === 'mock') headBadges.append(h('span.badge.warn', 'Mock'));
     }
     headBadges.append(saveState);
@@ -169,12 +171,11 @@ export async function render(root, { param, navigate }) {
 
   async function pickerPreview(host, paperId, writingId) {
     const { layoutDocument, pagesToSvg } = await import('../doc/engine.js');
-    const previewDoc = { ...doc, paper: paperId, writing: writingId, content: { ...doc.content, paragraphs: ['Sample text showing this style.'] } };
+    const previewDoc = { ...doc, paper: paperId, writing: writingId, content: { ...doc.content } };
     try {
       const { pages } = await layoutDocument(previewDoc);
       host.innerHTML = pagesToSvg([pages[0]])[0];
-      const svg = host.querySelector('svg');
-      if (svg) { svg.setAttribute('viewBox', '18 58 122 106'); svg.setAttribute('preserveAspectRatio', 'xMinYMin slice'); }
+      previewCrop(host, false, pages[0]);
     } catch { /* preview optional */ }
   }
 
@@ -213,7 +214,7 @@ export async function render(root, { param, navigate }) {
       side.append(
         h('div.card.side-card.stack.desk-only',
           h('button.btn.secondary.block', { type: 'button', onclick: () => openEditor() }, iconEl('edit', 18), 'Edit text'),
-          h('button.btn.secondary.block', { type: 'button', onclick: () => openTune() }, iconEl('settings', 18), 'Fine-tune writing & page'),
+          dev ? h('button.btn.secondary.block', { type: 'button', onclick: () => openTune() }, iconEl('settings', 18), 'Fine-tune (developer)') : null,
           h('button.btn.secondary.block', { type: 'button', onclick: () => regenerate() }, iconEl('refresh', 18), 'Write a new version'),
           h('button.btn.primary.block', { type: 'button', onclick: (e) => doExport(e.currentTarget) }, iconEl('download', 18), 'Download PDF'),
           h('p.small.subtle', 'Tap any line on the page to edit it. Edits and style changes are free.')));
@@ -342,7 +343,7 @@ export async function render(root, { param, navigate }) {
       content: () => h('div.stack',
         h('button.btn.secondary.block', { type: 'button', onclick: () => { s.close(); regenerate(); } }, iconEl('refresh', 18), 'Write a new version'),
         h('button.btn.secondary.block', { type: 'button', onclick: () => { s.close(); openEditor(); } }, iconEl('edit', 18), 'Edit text'),
-        h('button.btn.secondary.block', { type: 'button', onclick: () => { s.close(); openTune(); } }, iconEl('settings', 18), 'Fine-tune writing & page'),
+        dev ? h('button.btn.secondary.block', { type: 'button', onclick: () => { s.close(); openTune(); } }, iconEl('settings', 18), 'Fine-tune (developer)') : null,
         h('p.small.subtle', 'A new version uses one generation. This version stays in your history.'))
     });
   }

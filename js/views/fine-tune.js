@@ -123,3 +123,17 @@ export function gearButton(onClick, label = 'Fine-tune') {
 }
 
 export { HUMAN_PRESETS };
+
+/**
+ * Zooms a picker preview into the salutation and body, where the handwriting is readable. The crop
+ * starts one line above the salutation as laid out on this page, so no line is ever cut in half.
+ */
+export function previewCrop(host, whole = false, page = null) {
+  const svg = host.querySelector('svg');
+  if (!svg) return;
+  if (whole) { svg.setAttribute('viewBox', '0 0 210 172'); svg.setAttribute('preserveAspectRatio', 'xMidYMin slice'); return; } // paper: show its geometry
+  const sal = page && page.items.find((it) => it.b === 'salutation' && (it.t === 'glyph' || it.t === 'text'));
+  const top = sal ? Math.max(0, sal.y - 9) : 78;
+  svg.setAttribute('viewBox', `18 ${Math.round(top * 10) / 10} 122 106`); // several real lines of handwriting
+  svg.setAttribute('preserveAspectRatio', 'xMinYMin slice');
+}

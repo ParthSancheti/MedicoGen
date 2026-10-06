@@ -9,8 +9,8 @@
 
 var DEMO_TEMPLATE_IDS_ = ['demo-fitness', 'demo-leave', 'demo-opd'];
 // A letter's look is stored as "paper|writing" in the style column (e.g. "classmate|handlee").
-var PAPER_IDS_ = ['classmate', 'college', 'wide', 'register', 'black_margin', 'exam', 'legal', 'kraft', 'graph', 'dots', 'cream', 'plain'];
-var WRITING_IDS_ = ['handlee', 'kalam', 'patrick', 'caveat', 'mynerve', 'covered', 'architects', 'shadows', 'gochi', 'schoolbell', 'indie',
+var PAPER_IDS_ = ['classmate', 'school', 'college', 'wide', 'register', 'black_margin', 'exam', 'legal', 'kraft', 'graph', 'dots', 'cream', 'plain'];
+var WRITING_IDS_ = ['neat', 'flowing', 'ballpoint', 'steady', 'handlee', 'kalam', 'patrick', 'caveat', 'mynerve', 'covered', 'architects', 'shadows', 'gochi', 'schoolbell', 'indie',
   'dawning', 'cedarville', 'nothing', 'homemade', 'academic', 'modern', 'classic'];
 /** Precision settings: group → key → [min, max]. Mirrors SETTINGS_SPEC in js/doc/styles.js. */
 var SETTINGS_RANGES_ = {
@@ -36,7 +36,7 @@ function cleanSettings_(raw) {
   return out;
 }
 
-var LEGACY_STYLES_ = { notebook: 'classmate|kalam', academic: 'plain|academic', modern: 'plain|modern', classic: 'cream|classic' };
+var LEGACY_STYLES_ = { notebook: 'classmate|steady', academic: 'plain|academic', modern: 'plain|modern', classic: 'cream|classic' };
 
 function cleanGenerationId_(value) {
   var id = String(value || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 64);
@@ -114,7 +114,7 @@ function splitLook_(style) {
   var parts = v.split('|');
   return {
     paper: PAPER_IDS_.indexOf(parts[0]) >= 0 ? parts[0] : 'classmate',
-    writing: WRITING_IDS_.indexOf(parts[1]) >= 0 ? parts[1] : 'handlee'
+    writing: WRITING_IDS_.indexOf(parts[1]) >= 0 ? parts[1] : 'neat'
   };
 }
 

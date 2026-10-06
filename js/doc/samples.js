@@ -20,3 +20,24 @@ export const SAMPLE_CONTENT = {
 };
 
 export const sampleDoc = (style) => ({ kind: 'letter', id: 'sample', style, input: SAMPLE_INPUT, content: SAMPLE_CONTENT });
+
+/**
+ * Output-quality sample: several paragraphs with repeated letters, punctuation, numbers and mixed
+ * case, so handwriting profiles can be judged on a realistic page rather than one sentence.
+ */
+export const QUALITY_INPUT = {
+  ...SAMPLE_INPUT,
+  student: { ...SAMPLE_INPUT.student, name: 'Ishaan Deshpande', rollNo: '23' },
+  recipient: { name: 'Dr. S. R. Kulkarni', designation: 'Head of Department', salutation: 'Sir' }
+};
+export const QUALITY_CONTENT = {
+  subject: 'Application for leave of absence from 12 September 2026 to 16 September 2026',
+  salutation: 'Respected Sir,',
+  paragraphs: [
+    'I am a student of Third Year (Div. B, Roll No. 23) in the Department of Computer Engineering. I was unable to attend college from 12 September 2026 to 16 September 2026 (5 days), as I had a high fever and was advised complete rest at home.',
+    'During this period I missed the lectures of DBMS, Operating Systems and Theory of Computation, along with two practical sessions. I have already collected the notes from my classmates, and I will complete the pending assignments, journals and lab write-ups by 25 September 2026.',
+    'I sincerely request you to kindly grant me leave for these five days and consider my attendance for this period. I assure you that I will be regular and attentive in all my classes from now on.'
+  ],
+  closing: 'Thanking you.',
+  signoff: 'Yours obediently,'
+};
