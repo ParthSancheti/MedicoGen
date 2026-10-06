@@ -20,9 +20,10 @@ const ROUTES = {
   letter: () => import('./views/letter-wizard.js'),
   demo: () => import('./views/demo-wizard.js'),
   studio: () => import('./views/studio.js'),
-  history: () => import('./views/history.js')
+  history: () => import('./views/history.js'),
+  dev: () => import('./views/dev-fonts.js')
 };
-const FOCUS_ROUTES = new Set(['letter', 'demo', 'studio']);
+const FOCUS_ROUTES = new Set(['letter', 'demo', 'studio', 'dev']);
 
 let cleanup = null;
 let renderSeq = 0;

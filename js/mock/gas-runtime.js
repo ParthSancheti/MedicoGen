@@ -168,7 +168,16 @@ export function createRuntime(state, hooks = {}) {
       fetch: (url, opts = {}) => {
         if (String(url).includes('generativelanguage.googleapis.com')) {
           const mode = state.props.MOCK_GEMINI || 'ok';
-          return mockGeminiResponse(mode, JSON.parse(opts.payload || '{}'));
+          if (mode !== 'ok') return mockGeminiResponse(mode, JSON.parse(opts.payload || '{}'));
+          try {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/gemini', false);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.send(opts.payload || '{}');
+            return { getResponseCode: () => xhr.status, getContentText: () => xhr.responseText };
+          } catch (e) {
+            return mockGeminiResponse('ok', JSON.parse(opts.payload || '{}'));
+          }
         }
         if (String(url).includes('graph.facebook.com')) return { getResponseCode: () => 500, getContentText: () => 'mock: no WhatsApp API' };
         throw new Error('Mock runtime has no network access: ' + url);

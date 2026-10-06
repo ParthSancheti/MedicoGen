@@ -2,7 +2,7 @@
  * Browser document engine. One structured document → one layout → two views (SVG preview, PDF).
  */
 import { FontRegistry } from './fonts.js';
-import { STYLES, styleFonts } from './styles.js';
+import { styleFonts, WRITING, PAPERS } from './styles.js';
 import { layoutLetter } from './letter-layout.js';
 import { layoutTemplate, templateFonts } from './template-layout.js';
 import { TEMPLATES } from './templates.js';
@@ -52,17 +52,26 @@ export async function getRegistry() {
 }
 
 export function fontsFor(doc) {
-  return doc.kind === 'demo' ? templateFonts() : styleFonts(STYLES[doc.style] || STYLES.notebook);
+  if (doc.style && !doc.paper) migrateStyle(doc);
+  return doc.kind === 'demo' ? templateFonts() : styleFonts(doc.writing || 'kalam');
+}
+
+function migrateStyle(doc) {
+  if (doc.style === 'notebook') { doc.paper = 'classmate'; doc.writing = 'kalam'; }
+  else if (doc.style === 'academic') { doc.paper = 'plain'; doc.writing = 'academic'; }
+  else if (doc.style === 'modern') { doc.paper = 'plain'; doc.writing = 'modern'; }
+  else if (doc.style === 'classic') { doc.paper = 'cream'; doc.writing = 'classic'; }
 }
 
 /**
- * doc = { kind:'letter', style, input, content, id }  or  { kind:'demo', templateId, fields, id }
+ * doc = { kind:'letter', paper, writing, input, content, id }  or  { kind:'demo', templateId, fields, id }
  */
 export async function layoutDocument(doc, { dev = false } = {}) {
+  if (doc.style && !doc.paper) migrateStyle(doc);
   const reg = await getRegistry();
   await reg.ensure(fontsFor(doc));
   if (doc.kind === 'demo') return layoutTemplate({ templateId: doc.templateId, fields: doc.fields || {}, registry: reg, dev });
-  return layoutLetter({ input: doc.input, content: doc.content, styleId: doc.style, registry: reg, seed: doc.id || 'preview' });
+  return layoutLetter({ input: doc.input, content: doc.content, paperId: doc.paper || 'classmate', writingId: doc.writing || 'kalam', registry: reg, seed: doc.id || 'preview' });
 }
 
 export function pagesToSvg(pages, opts) {

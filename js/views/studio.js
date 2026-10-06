@@ -11,7 +11,7 @@ import { icon, iconEl } from '../ui/icons.js';
 import { openSheet, confirmSheet } from '../ui/sheet.js';
 import { toast } from '../ui/toast.js';
 import { app } from '../core/state.js';
-import { STYLES, STYLE_ORDER } from '../doc/styles.js';
+import { PAPERS, PAPER_ORDER, WRITING, WRITING_ORDER } from '../doc/styles.js';
 import { TEMPLATES, DEMO_NOTICE } from '../doc/templates.js';
 import { toDoc, docTitle } from './common.js';
 import { generate } from './generate.js';
@@ -55,7 +55,8 @@ export async function render(root, { param, navigate }) {
     h('button.icon-btn', { type: 'button', 'aria-label': 'Back to home', onclick: () => navigate('home') }, iconEl('back', 20)),
     h('div.grow.stack.sm', { style: { gap: '2px' } }, h('h1', docTitle(gen)), headBadges));
 
-  const styleStrip = h('div.style-strip', { role: 'radiogroup', 'aria-label': 'Page style' });
+  const paperStrip = h('div.style-grid', { role: 'radiogroup', 'aria-label': 'Page style' });
+  const writingStrip = h('div.style-grid', { role: 'radiogroup', 'aria-label': 'Handwriting style' });
   const side = h('aside.studio-side');
 
   const exportBtn = h('button.btn.primary', { type: 'button', onclick: () => doExport(exportBtn) }, iconEl('download', 20), 'Download PDF');
@@ -64,7 +65,8 @@ export async function render(root, { param, navigate }) {
     isDemo ? h('span') : h('button.btn.secondary', { type: 'button', 'aria-label': 'More', onclick: () => openMore() }, iconEl('more', 20)),
     exportBtn));
 
-  const main = h('div.stack', { style: { gap: '12px', minWidth: 0 } }, isDemo ? null : styleStrip, warnEl, zoomCtl, pagesEl);
+  const main = h('div.stack', { style: { gap: '12px', minWidth: 0 } }, 
+    warnEl, zoomCtl, pagesEl);
   root.append(h('div.studio-wrap', h('div.stack', { style: { minWidth: 0 } }, head, main), side));
   document.body.append(actions);
 
@@ -78,7 +80,7 @@ export async function render(root, { param, navigate }) {
     clear(headBadges);
     if (isDemo) headBadges.append(h('span.badge.danger', 'Sample · demonstration only'), h('span.badge.neutral', TEMPLATES[doc.templateId].name));
     else {
-      headBadges.append(h('span.badge', STYLES[doc.style].name));
+      headBadges.append(h('span.badge', PAPERS[doc.paper || 'classmate'].name), h('span.badge', WRITING[doc.writing || 'kalam'].name));
       headBadges.append(gen.source === 'gemini' ? h('span.badge.success', iconEl('sparkle', 13), 'Written with Gemini') : h('span.badge.neutral', 'Standard template'));
       if (gen.source === 'mock') headBadges.append(h('span.badge.warn', 'Mock'));
     }
@@ -112,26 +114,61 @@ export async function render(root, { param, navigate }) {
     haptic('select');
   }
 
-  /* ---------- style ---------- */
-  function renderStyles() {
-    clear(styleStrip);
-    STYLE_ORDER.forEach((id) => {
-      const s = STYLES[id];
-      const b = h('button.style-pill' + (doc.style === id ? '.on' : ''), { type: 'button', role: 'radio', 'aria-checked': String(doc.style === id) },
-        h('span.sw', { style: { fontFamily: `'MG ${{ notebook: 'Kalam', academic: 'Source Serif', modern: 'Inter', classic: 'Baskerville' }[id]}'` } }, STYLE_GLYPH[id]), s.name);
-      b.addEventListener('click', () => setStyle(id));
-      styleStrip.append(b);
+  function renderPickers() {
+    clear(paperStrip);
+    PAPER_ORDER.forEach((id) => {
+      const p = PAPERS[id];
+      const prev = h('div.preview');
+      const card = h('button.style-card' + (doc.paper === id ? '.on' : ''), { type: 'button', role: 'radio', 'aria-checked': String(doc.paper === id) },
+        prev, h('h3', p.name), h('p', p.blurb), h('span.tick', iconEl('check', 14)));
+      card.addEventListener('click', () => setPaper(id));
+      paperStrip.append(card);
+      pickerPreview(prev, id, doc.writing);
+    });
+
+    clear(writingStrip);
+    WRITING_ORDER.forEach((id) => {
+      const w = WRITING[id];
+      const prev = h('div.preview');
+      const card = h('button.style-card' + (doc.writing === id ? '.on' : ''), { type: 'button', role: 'radio', 'aria-checked': String(doc.writing === id) },
+        prev, h('h3', w.name), h('p', w.tag), h('span.tick', iconEl('check', 14)));
+      card.addEventListener('click', () => setWriting(id));
+      writingStrip.append(card);
+      pickerPreview(prev, doc.paper, id);
     });
   }
-  async function setStyle(id) {
-    if (doc.style === id) return;
+
+  async function pickerPreview(host, paperId, writingId) {
+    const { layoutDocument, pagesToSvg } = await import('../doc/engine.js');
+    const previewDoc = { ...doc, paper: paperId, writing: writingId, content: { ...doc.content, paragraphs: ['Sample text showing this style.'] } };
+    try {
+      const { pages } = await layoutDocument(previewDoc);
+      host.innerHTML = pagesToSvg([pages[0]])[0];
+      const svg = host.querySelector('svg');
+      if (svg) svg.setAttribute('viewBox', '0 30 210 50');
+    } catch { /* preview optional */ }
+  }
+
+  async function setPaper(id) {
+    if (doc.paper === id) return;
     haptic('select');
-    doc = { ...doc, style: id };
-    gen.style = id;
-    session.lastStyle = id;
-    renderStyles(); renderSide(); badges();
+    doc = { ...doc, paper: id };
+    gen.paper = id;
+    session.lastPaper = id;
+    renderPickers(); renderSide(); badges();
     await draw();
-    persist({ style: id });
+    persist({ paper: id });
+  }
+
+  async function setWriting(id) {
+    if (doc.writing === id) return;
+    haptic('select');
+    doc = { ...doc, writing: id };
+    gen.writing = id;
+    session.lastWriting = id;
+    renderPickers(); renderSide(); badges();
+    await draw();
+    persist({ writing: id });
   }
 
   /* ---------- side panel ---------- */
@@ -145,16 +182,6 @@ export async function render(root, { param, navigate }) {
         h('button.btn.primary.block.desk-only', { type: 'button', onclick: (e) => doExport(e.currentTarget) }, iconEl('download', 18), 'Download sample PDF')));
     } else {
       side.append(
-        h('div.card.side-card.stack.desk-only',
-          h('span.label', 'Page style'),
-          h('div.stack.sm', STYLE_ORDER.map((id) => {
-            const s = STYLES[id];
-            const b = h('button.option' + (doc.style === id ? '.on' : ''), { type: 'button', style: { padding: '12px 14px' }, onclick: () => setStyle(id) },
-              h('span.style-pill', { style: { padding: 0, boxShadow: 'none', background: 'transparent' } }, h('span.sw', { style: { fontFamily: `'MG ${{ notebook: 'Kalam', academic: 'Source Serif', modern: 'Inter', classic: 'Baskerville' }[id]}'` } }, 'Aa')),
-              h('div.stack.sm', { style: { gap: 0 } }, h('h3', { style: { fontSize: '15px' } }, s.name), h('p', { style: { fontSize: '12.5px' } }, s.blurb)),
-              h('span.tick', iconEl('check', 14)));
-            return b;
-          }))),
         h('div.card.side-card.stack.desk-only',
           h('button.btn.secondary.block', { type: 'button', onclick: () => openEditor() }, iconEl('edit', 18), 'Edit text'),
           h('button.btn.secondary.block', { type: 'button', onclick: () => regenerate() }, iconEl('refresh', 18), 'Write a new version'),
@@ -219,6 +246,10 @@ export async function render(root, { param, navigate }) {
         persist({ content: c, input });
       },
       content: () => h('div.editor',
+        h('div.divider', 'Visuals'),
+        h('div.field', h('label', 'Paper style'), paperStrip),
+        h('div.field', h('label', 'Handwriting style'), writingStrip),
+        h('div.divider', 'Text Content'),
         h('div.field', h('label', 'Subject'), area(c.subject, (v) => { c.subject = v; }, { rows: 2, label: 'Subject', id: 'subject' })),
         h('div.field', h('label', 'Greeting'), line(c.salutation, (v) => { c.salutation = v; }, 'Greeting', 'salutation')),
         parasHost,
@@ -291,7 +322,7 @@ export async function render(root, { param, navigate }) {
     const ok = await confirmSheet({ title: 'Write a new version?', message: `Gemini will write a fresh letter from the same details. This uses 1 generation (${left} left). Your current version stays in History.`, confirm: 'Write new version' });
     if (!ok) return;
     const data = {};
-    const res = await generate({ action: 'letter.generate', kind: 'letter', data, saveDraft: () => {}, params: { style: doc.style, input: doc.input } });
+    const res = await generate({ action: 'letter.generate', kind: 'letter', data, saveDraft: () => {}, params: { paper: doc.paper, writing: doc.writing, input: doc.input } });
     if (!res) return;
     sessionStorage.setItem('mg.fresh', JSON.stringify({ id: res.generation.id, notice: res.notice || null }));
     navigate('studio/' + res.generation.id);

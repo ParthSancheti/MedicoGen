@@ -4,7 +4,7 @@ import { haptic } from '../core/haptics.js';
 import { session } from '../core/session.js';
 import { iconEl } from '../ui/icons.js';
 import { app } from '../core/state.js';
-import { STYLES, STYLE_ORDER } from '../doc/styles.js';
+import { PAPERS, WRITING } from '../doc/styles.js';
 import { longDate } from '../doc/text.js';
 import { runWizard, textField, choiceChips } from './wizard.js';
 import { generate } from './generate.js';
@@ -38,7 +38,8 @@ export function render(root, { navigate }) {
     letterType: 'absence',
     date: todayIso(),
     tone: 'formal',
-    style: session.lastStyle || 'notebook',
+    paper: session.lastPaper || 'classmate',
+    writing: session.lastWriting || 'kalam',
     student: { name: profile.name || '', college: profile.college || '', department: profile.department || '', year: profile.year || '', division: profile.division || '', rollNo: profile.rollNo || '' },
     absence: { from: '', to: '', reasonCategory: '', reason: '', documents: false },
     recipient: { name: profile.hodName || '', designation: profile.designation || 'Head of Department', salutation: profile.salutation || 'Sir' }
@@ -162,27 +163,48 @@ export function render(root, { navigate }) {
       validate: (d) => (d.recipient.designation.trim().length < 2 ? { 'recipient.designation': 'Add a designation, e.g. Head of Department.' } : {})
     },
     {
-      key: 'style', eyebrow: 'Style', title: 'How should it look?', text: 'Each preview uses the exact font of your final PDF. You can switch later for free.',
+      key: 'style', eyebrow: 'Tone', title: 'How should it sound?', text: 'Choose the tone of your letter.',
       render: (d, ui) => {
-        const grid = h('div.style-grid');
-        STYLE_ORDER.forEach((id) => {
-          const s = STYLES[id];
-          const prev = h('div.preview');
-          const card = h('button.style-card' + (d.style === id ? '.on' : ''), { type: 'button', 'aria-pressed': String(d.style === id) },
-            prev, h('h3', s.name), h('p', s.blurb), h('span.tick', iconEl('check', 14)));
-          card.addEventListener('click', () => {
-            d.style = id; session.lastStyle = id; ui.changed(); haptic('select');
-            grid.querySelectorAll('.style-card').forEach((c) => { c.classList.toggle('on', c === card); c.setAttribute('aria-pressed', String(c === card)); });
-          });
-          grid.append(card);
-          stylePreview(prev, id, d);
-        });
         const tone = h('div.segmented', { role: 'group', 'aria-label': 'Tone' }, [['formal', 'Formal'], ['simple', 'Simple & warm']].map(([v, l]) => {
           const b = h('button' + (d.tone === v ? '.on' : ''), { type: 'button' }, l);
           b.addEventListener('click', () => { d.tone = v; ui.changed(); haptic('select'); tone.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); });
           return b;
         }));
-        return h('div.stack', grid, h('div.field', h('label', 'Tone of writing'), tone));
+        return h('div.stack', h('div.field', h('label', 'Tone of writing'), tone));
+      }
+    },
+    {
+      key: 'writing', eyebrow: 'Typography', title: 'Handwriting style', text: 'Choose the handwriting font for your letter.',
+      render: (d, ui) => {
+        const grid = h('div.style-grid');
+        import('../doc/styles.js').then(({ WRITING_ORDER, WRITING }) => {
+          WRITING_ORDER.forEach(id => {
+            const w = WRITING[id];
+            const btn = h('button.style-card' + (d.writing === id ? '.on' : ''), { type: 'button' });
+            btn.innerHTML = `<div class="preview"></div><div class="info"><h4>${w.name}</h4></div>`;
+            grid.append(btn);
+            pickerPreview(btn.querySelector('.preview'), d.paper || 'classmate', id, d);
+            btn.addEventListener('click', () => { d.writing = id; ui.changed(); grid.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn)); });
+          });
+        });
+        return h('div.stack', grid);
+      }
+    },
+    {
+      key: 'paper', eyebrow: 'Page', title: 'Paper style', text: 'Choose the physical paper layout.',
+      render: (d, ui) => {
+        const grid = h('div.style-grid');
+        import('../doc/styles.js').then(({ PAPER_ORDER, PAPERS }) => {
+          PAPER_ORDER.forEach(id => {
+            const p = PAPERS[id];
+            const btn = h('button.style-card' + (d.paper === id ? '.on' : ''), { type: 'button' });
+            btn.innerHTML = `<div class="preview"></div><div class="info"><h4>${p.name}</h4></div>`;
+            grid.append(btn);
+            pickerPreview(btn.querySelector('.preview'), id, d.writing || 'kalam', d);
+            btn.addEventListener('click', () => { d.paper = id; ui.changed(); grid.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn)); });
+          });
+        });
+        return h('div.stack', grid);
       }
     },
     {
@@ -197,7 +219,7 @@ export function render(root, { navigate }) {
           ['Dates', n === 1 ? longDate(d.absence.from) : `${longDate(d.absence.from)} – ${longDate(d.absence.to)} (${n} days)`],
           ['Reason', d.absence.reason],
           ['To', [d.recipient.name, d.recipient.designation].filter(Boolean).join(', ')],
-          ['Style', STYLES[d.style].name + ' · ' + (d.tone === 'simple' ? 'simple' : 'formal')]
+          ['Paper', PAPERS[d.paper || 'classmate'].name + ' · ' + WRITING[d.writing || 'kalam'].name + ' (' + (d.tone === 'simple' ? 'simple' : 'formal') + ')']
         ];
         return h('div.stack',
           h('div.card', h('dl.summary-dl', rows.map(([k, v]) => h('div', h('dt', k), h('dd', v || '—'))))),
@@ -215,7 +237,7 @@ export function render(root, { navigate }) {
     finish: async (d, ctl) => {
       const res = await generate({
         action: 'letter.generate', kind: 'letter', data: d, saveDraft: ctl.saveDraft,
-        params: { style: d.style, input: { letterType: d.letterType, date: d.date, tone: d.tone, student: d.student, absence: d.absence, recipient: d.recipient } }
+        params: { paper: d.paper, writing: d.writing, input: { letterType: d.letterType, date: d.date, tone: d.tone, student: d.student, absence: d.absence, recipient: d.recipient } }
       });
       if (!res) return;
       session.profile = { ...d.student, hodName: d.recipient.name, designation: d.recipient.designation, salutation: d.recipient.salutation };
@@ -226,16 +248,16 @@ export function render(root, { navigate }) {
 }
 
 /** Style card preview: the top of the real page, rendered with the student's own details. */
-async function stylePreview(host, styleId, d) {
+async function pickerPreview(host, paperId, writingId, d) {
   const { layoutDocument, pagesToSvg } = await import('../doc/engine.js');
   const days = Math.max(1, daysBetween(d.absence.from, d.absence.to) || 1);
   const period = days === 1 ? longDate(d.absence.from) : `${longDate(d.absence.from)} to ${longDate(d.absence.to)}`;
   const doc = {
-    kind: 'letter', id: 'style-preview', style: styleId,
+    kind: 'letter', id: 'style-preview', paper: paperId, writing: writingId,
     input: { ...d, absence: { ...d.absence, days } },
     content: {
       subject: `Application for leave ${d.absence.from ? (days === 1 ? 'on ' : 'from ') + period : ''}`.trim(),
-      salutation: `Respected ${d.recipient.salutation},`,
+      salutation: `Respected ${d.recipient.salutation || 'Sir'},`,
       paragraphs: ['Your letter will be written here in this style, with the same font and spacing you see now.'],
       closing: 'Thanking you.', signoff: 'Yours obediently,'
     }

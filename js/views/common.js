@@ -2,14 +2,15 @@
 import { h } from '../core/dom.js';
 import { iconEl } from '../ui/icons.js';
 import { haptic } from '../core/haptics.js';
-import { STYLES } from '../doc/styles.js';
+import { PAPERS } from '../doc/styles.js';
 import { TEMPLATES } from '../doc/templates.js';
 
 export function docSubtitle(gen) {
   const when = new Date(gen.createdAt);
   const date = when.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
   if (gen.kind === 'demo') return [TEMPLATES[gen.style]?.name || 'Template', date];
-  return [STYLES[gen.style]?.name || 'Letter', date];
+  const pId = gen.paper || gen.style || 'classmate';
+  return [PAPERS[pId]?.name || 'Letter', date];
 }
 
 export function docTitle(gen) {
@@ -44,7 +45,7 @@ export function docItem(gen, onOpen) {
 /** Converts a backend generation into the engine's document model. */
 export function toDoc(gen) {
   if (gen.kind === 'demo') return { kind: 'demo', id: gen.id, templateId: gen.content.templateId, fields: gen.content.fields || {} };
-  return { kind: 'letter', id: gen.id, style: gen.style, input: gen.input, content: gen.content };
+  return { kind: 'letter', id: gen.id, paper: gen.paper, writing: gen.writing, style: gen.style, input: gen.input, content: gen.content };
 }
 
 export function emptyState(iconName, title, text, action) {

@@ -11,6 +11,13 @@ export const PT = 25.4 / 72; // 1 pt in mm
 export const FONT_FILES = {
   kalam:          { file: 'Kalam_400Regular.ttf',           family: 'MG Kalam',        weight: 400, label: 'Kalam' },
   kalamBold:      { file: 'Kalam_700Bold.ttf',              family: 'MG Kalam',        weight: 700, label: 'Kalam Bold' },
+  handlee:        { file: 'Handlee-Regular.ttf',            family: 'MG Handlee',      weight: 400, label: 'Handlee' },
+  patrick:        { file: 'PatrickHand-Regular.ttf',        family: 'MG Patrick Hand', weight: 400, label: 'Patrick Hand' },
+  caveat:         { file: 'Caveat-VariableFont_wght.ttf',   family: 'MG Caveat',       weight: 400, label: 'Caveat' },
+  gochi:          { file: 'GochiHand-Regular.ttf',          family: 'MG Gochi Hand',   weight: 400, label: 'Gochi Hand' },
+  indie:          { file: 'IndieFlower-Regular.ttf',        family: 'MG Indie Flower', weight: 400, label: 'Indie Flower' },
+  schoolbell:     { file: 'Schoolbell-Regular.ttf',         family: 'MG Schoolbell',   weight: 400, label: 'Schoolbell' },
+  justanother:    { file: 'JustAnotherHand-Regular.ttf',    family: 'MG Just Another Hand', weight: 400, label: 'Just Another Hand' },
   serif:          { file: 'SourceSerif4_400Regular.ttf',    family: 'MG Source Serif', weight: 400, label: 'Source Serif 4' },
   serifBold:      { file: 'SourceSerif4_600SemiBold.ttf',   family: 'MG Source Serif', weight: 600, label: 'Source Serif 4 SemiBold' },
   sans:           { file: 'Inter_400Regular.ttf',           family: 'MG Inter',        weight: 400, label: 'Inter' },
