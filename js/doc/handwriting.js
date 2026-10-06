@@ -9,7 +9,9 @@
  *          SMOOTH noise along the line so neighbouring letters share a tendency instead of shaking
  *          independently; each letter also picks one of a few personal "variants" (the way a writer
  *          has a few ways of making an e), so repeated letters are never identical
- *   word   a slightly different spacing and ink density per word
+ *   word   each word floats on its own: a small lift or dip, its own tilt, size, pen pressure and
+ *          uneven spacing (some words crowd together, some stand apart), as a hand moving along a
+ *          line does
  *   line   a gentle baseline slope/drift that stays on the rule, and a tiny start-position variation
  *   slips  a set number of words written wrongly, struck through and rewritten
  *
@@ -104,15 +106,19 @@ export function emitHandLine(items, toks, c) {
   const nBase = smoothNoise(seed + 'B'), nScale = smoothNoise(seed + 'S'), nRot = smoothNoise(seed + 'R');
   const nSpace = smoothNoise(seed + 'P'), nSlant = smoothNoise(seed + 'K'), nInk = smoothNoise(seed + 'I');
   const A = {
-    base: 0.16 * P.baseline * H.glyph,        // mm
-    scale: 0.032 * P.scale * H.glyph,         // fraction of height
-    width: 0.018 * P.scale * H.glyph,
-    rot: 1.5 * P.rotation * H.glyph,          // degrees
-    space: 0.09 * P.spacing * H.word,         // mm between letters
-    word: 0.22 * P.spacing * H.word,          // fraction of a space
-    slant: 2.0 * H.slantVar,                  // degrees, slow drift
-    ink: 0.05 * P.pressure * H.pressure
+    base: 0.22 * P.baseline * H.glyph,        // mm
+    scale: 0.04 * P.scale * H.glyph,          // fraction of height
+    width: 0.03 * P.scale * H.glyph,
+    rot: 2.2 * P.rotation * H.glyph,          // degrees
+    space: 0.14 * P.spacing * H.word,         // mm between letters
+    word: 0.42 * P.spacing * H.word,          // fraction of a space
+    slant: 3.0 * H.slantVar,                  // degrees, slow drift
+    ink: 0.1 * P.pressure * H.pressure,
+    float: 0.42 * P.baseline * H.word,        // mm, whole-word lift/dip
+    tilt: 0.022 * P.drift * H.word,           // mm per mm, a word climbing or sinking
+    wsize: 0.03 * P.scale * H.word            // whole-word size
   };
+  const maxDy = 0.7 * Math.max(1, H.line);    // never wander off the line
 
   // 1) nominal positions + personality deltas
   const glyphs = [];
@@ -121,21 +127,26 @@ export function emitHandLine(items, toks, c) {
   toks.forEach((t, ti) => {
     const wordStart = x;
     const wordInk = c.density * (1 - A.ink * (0.5 + 0.5 * nInk(ti * 0.9)));
-    const wordDy = unit(seed + 'wd' + ti) * 0.08 * H.word;
+    const wordDy = unit(seed + 'wd' + ti) * A.float;
+    const wordTilt = unit(seed + 'wt' + ti) * A.tilt;
+    const wordSize = 1 + unit(seed + 'wz' + ti) * A.wsize;
+    const wordPen = 1 + unit(seed + 'wp' + ti) * 0.35 * P.pressure * H.pressure;
+    const wordSlant = unit(seed + 'wk' + ti) * 1.6 * H.slantVar;
     t.clusters.forEach((cl, ci) => {
       const occ = (c.occurrences.get(cl.ch) || 0) + 1;
       c.occurrences.set(cl.ch, occ);
       const k = Math.floor(((unit(c.docSeed + cl.ch + '#' + occ) + 1) / 2) * P.variants) % Math.max(1, P.variants);
       const variant = { s: unit(c.docSeed + 'vs' + cl.ch + k), w: unit(c.docSeed + 'vw' + cl.ch + k), r: unit(c.docSeed + 'vr' + cl.ch + k), y: unit(c.docSeed + 'vy' + cl.ch + k) };
       const nx = (x - c.x0) / 9;
-      const sy = F.height * (1 + A.scale * (0.55 * nScale(nx) + 0.45 * variant.s));
-      const sx = F.width * (1 + A.width * (0.5 * nScale(nx + 40) + 0.5 * variant.w));
+      const sy = F.height * wordSize * (1 + A.scale * (0.55 * nScale(nx) + 0.45 * variant.s));
+      const sx = F.width * wordSize * (1 + A.width * (0.5 * nScale(nx + 40) + 0.5 * variant.w));
       const adv = (cl.adv + cl.kern) * sizeMm * sx;
       glyphs.push({
         cl, t, ti, x, adv, sx, sy,
-        dy: wordDy + A.base * (0.65 * nBase(nx) + 0.35 * variant.y),
-        rot: A.rot * (0.5 * nRot(gi * 0.6) + 0.5 * variant.r),
-        skew: F.slant + A.slant * nSlant((x - c.x0) / 45),
+        dy: wordDy + wordTilt * (x - wordStart) + A.base * (0.65 * nBase(nx) + 0.35 * variant.y),
+        rot: A.rot * (0.5 * nRot(gi * 0.6) + 0.5 * variant.r) + Math.atan(wordTilt) * 180 / Math.PI * 0.6,
+        skew: F.slant + wordSlant + A.slant * nSlant((x - c.x0) / 45),
+        pen: wordPen,
         op: wordInk * (1 - 0.025 * (1 + unit(seed + 'gi' + gi)) * P.pressure * H.pressure)
       });
       const gap = ci < t.clusters.length - 1 ? F.letterSpacing + A.space * nSpace(gi * 0.7) : 0;
@@ -147,13 +158,25 @@ export function emitHandLine(items, toks, c) {
     if (ti < toks.length - 1) x += t.space * (1 + A.word * unit(seed + 'ws' + ti));
   });
 
-  // 2) never cross the right margin: take back spacing first, then (rarely) <1% horizontal squeeze
+  // 2) never cross the right margin: crowd the word gaps first (as a writer does near the edge),
+  //    then, only if still needed, a slight horizontal squeeze
   let end = x;
+  const origin = c.x0 + startShift;
+  if (end > c.rightLimit && toks.length > 1) {
+    const gaps = toks.slice(1).map((t, i) => t._start - toks[i]._end);
+    const room = gaps.reduce((s2, g) => s2 + g, 0) * 0.4;
+    const take = Math.min(end - c.rightLimit, room);
+    let shift = 0;
+    toks.forEach((t, ti) => {
+      if (ti > 0) shift += take * (gaps[ti - 1] / (room / 0.4));
+      if (!shift) return;
+      t._start -= shift; t._end -= shift;
+      glyphs.forEach((g) => { if (g.ti === ti) g.x -= shift; });
+    });
+    end -= take;
+  }
   if (end > c.rightLimit && glyphs.length > 1) {
-    const over = end - c.rightLimit;
-    const span = end - (c.x0 + startShift);
-    const f = Math.max(0.985, 1 - over / span);
-    const origin = c.x0 + startShift;
+    const f = Math.max(0.97, (c.rightLimit - origin) / (end - origin));
     glyphs.forEach((g) => { g.x = origin + (g.x - origin) * f; g.sx *= f; g.adv *= f; });
     toks.forEach((t) => { t._start = origin + (t._start - origin) * f; t._end = origin + (t._end - origin) * f; });
     end = origin + (end - origin) * f;
@@ -163,9 +186,9 @@ export function emitHandLine(items, toks, c) {
   const upm = c.upm;
   for (let i = 0; i < glyphs.length; i++) {
     const g = glyphs[i];
-    const y = c.baseline + g.dy + wander(g.x - c.x0);
+    const y = c.baseline + Math.max(-maxDy, Math.min(maxDy, g.dy + wander(g.x - c.x0)));
     const base = { t: 'glyph', f: g.t.f, gid: g.cl.gid, ch: g.cl.ch, upm, x: g.x, y, size: sizePt, sx: g.sx, sy: g.sy, rot: g.rot, skew: g.skew,
-      opacity: +g.op.toFixed(3), color: c.color, stroke: c.weight, b: c.blockId };
+      opacity: +g.op.toFixed(3), color: c.color, stroke: c.weight ? +(c.weight * g.pen).toFixed(4) : c.weight, b: c.blockId };
     if (i === 0 || glyphs[i - 1].t !== g.t) base.word = g.t.text; // lets the PDF register the shaped run (ToUnicode)
     items.push(base);
     for (const m of g.cl.marks) {

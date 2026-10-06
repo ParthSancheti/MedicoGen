@@ -194,3 +194,13 @@ export function choiceChips(ui, key, options, { label, onPick } = {}) {
   });
   return h('div.field', label ? h('label', label) : null, wrap, ui.error(key));
 }
+
+/**
+ * A complete date from a native date input, or ''. While a year is typed digit by digit the browser
+ * already reports "0002-…", "0020-…", "0202-…" as valid dates; those partial years are ignored.
+ */
+export function dateValue(input) {
+  const v = input.value;
+  const y = Number(v.slice(0, 4));
+  return /^\d{4}-\d{2}-\d{2}$/.test(v) && y >= 1900 && y <= 2100 ? v : '';
+}

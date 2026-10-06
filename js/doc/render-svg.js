@@ -70,15 +70,18 @@ export function pageToSvg(page, { className = 'doc-page', interactive = false } 
  * preview is interactive, each line of a block gets a transparent tap area on top of its glyphs.
  */
 function hitAreas(items) {
-  const lines = new Map();
+  const lines = [];
   for (const it of items) {
     if (it.t !== 'glyph' || !it.b) continue;
-    const key = it.b + '|' + Math.round(it.y);
     const em = it.size * PT;
-    const l = lines.get(key) || { b: it.b, x1: Infinity, x2: -Infinity, y1: Infinity, y2: -Infinity };
+    // glyphs float around their line, so lines are found by proximity rather than by rounding y
+    let l = lines.find((x) => x.b === it.b && Math.abs(x.y / x.n - it.y) < em * 0.45);
+    if (!l) lines.push(l = { b: it.b, x1: Infinity, x2: -Infinity, y: 0, n: 0, em });
     l.x1 = Math.min(l.x1, it.x); l.x2 = Math.max(l.x2, it.x + em * 0.5);
-    l.y1 = Math.min(l.y1, it.y - em * 0.75); l.y2 = Math.max(l.y2, it.y + em * 0.2);
-    lines.set(key, l);
+    l.y += it.y; l.n++;
   }
-  return [...lines.values()].map((l) => `<rect class="hit" x="${r(l.x1)}" y="${r(l.y1)}" width="${r(l.x2 - l.x1)}" height="${r(l.y2 - l.y1)}" fill="transparent" data-block="${escapeXml(l.b)}"/>`);
+  return lines.map((l) => {
+    const y = l.y / l.n;
+    return `<rect class="hit" x="${r(l.x1)}" y="${r(y - l.em * 0.6)}" width="${r(l.x2 - l.x1)}" height="${r(l.em * 0.8)}" fill="transparent" data-block="${escapeXml(l.b)}"/>`;
+  });
 }

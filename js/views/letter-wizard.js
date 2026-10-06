@@ -9,7 +9,7 @@ import { openFineTune, gearButton, previewCrop } from './fine-tune.js';
 
 const DEV = new URLSearchParams(location.search).get('dev') === '1';
 import { longDate } from '../doc/text.js';
-import { runWizard, textField, choiceChips } from './wizard.js';
+import { runWizard, textField, choiceChips, dateValue } from './wizard.js';
 import { generate } from './generate.js';
 
 /** Five voices; ids match TONES_ in apps-script/Letters.js (prompt + offline letter). */
@@ -99,19 +99,24 @@ export function render(root, { navigate }) {
         const dur = h('div.duration');
         const from = h('input.input', { type: 'date', value: d.absence.from, 'aria-label': 'From date' });
         const to = h('input.input', { type: 'date', value: d.absence.to, 'aria-label': 'To date' });
+        // Typing a year digit by digit reports partial years (0002, 0020…) as dates: only complete
+        // dates count, so "To" no longer jumps around while "From" is being typed.
         const sync = () => {
-          d.absence.from = from.value;
-          if (from.value && (!to.value || to.value < from.value)) to.value = from.value;
-          d.absence.to = to.value;
-          to.min = from.value || '';
+          d.absence.from = dateValue(from);
+          d.absence.to = dateValue(to);
+          to.min = d.absence.from;
           const n = daysBetween(d.absence.from, d.absence.to);
           dur.replaceChildren(iconEl('calendar', 22), n > 0
             ? h('div', h('b', n === 1 ? '1 day' : `${n} days`), h('div.subtle', n === 1 ? longDate(d.absence.from) : `${longDate(d.absence.from)} – ${longDate(d.absence.to)}`))
             : h('span.subtle', 'Pick the first and last day'));
           ui.changed();
         };
-        from.addEventListener('change', sync); to.addEventListener('change', sync);
-        to.addEventListener('input', sync); from.addEventListener('input', sync);
+        const follow = () => {
+          const f = dateValue(from);
+          if (f && (!dateValue(to) || dateValue(to) < f)) to.value = f;
+          sync();
+        };
+        for (const ev of ['input', 'change']) { from.addEventListener(ev, follow); to.addEventListener(ev, sync); }
         sync();
         const reasonHost = h('div');
         const drawReason = () => reasonHost.replaceChildren(textField(ui, 'absence.reason', {
@@ -195,7 +200,7 @@ export function render(root, { navigate }) {
       }
     },
     {
-      key: 'writing', eyebrow: 'Handwriting', title: 'Whose handwriting?', text: 'Four real hands. Each preview is your letter, written exactly as it will print.',
+      key: 'writing', eyebrow: 'Handwriting', title: 'Whose handwriting?', text: 'Seven real hands. Each preview is your letter, written exactly as it will print.',
       render: (d, ui) => pickerStep(d, ui, 'writing')
     },
     {

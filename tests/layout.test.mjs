@@ -54,11 +54,14 @@ for (const w of WRITING_ORDER) {
 }
 
 test('profiles have comparable optical size (x-height) despite different point sizes', () => {
-  const xs = WRITING_ORDER.map((w) => lay({ paperId: 'classmate', writingId: w }).typography);
+  // joined cursive is capped by its long loops (they must not reach the next line), so it is checked on its own
+  const print = WRITING_ORDER.filter((w) => !WRITING[w].cursive);
+  const xs = print.map((w) => lay({ paperId: 'classmate', writingId: w }).typography);
   const pts = xs.map((t) => t.sizePt), xh = xs.map((t) => t.xHeightMm);
   assert.ok(Math.max(...pts) - Math.min(...pts) > 3, 'point sizes differ between fonts');
   assert.ok(Math.max(...xh) / Math.min(...xh) < 1.08, `x-heights within 8%: ${xh.map((v) => v.toFixed(2))}`);
   for (const t of xs) assert.ok(t.xHeightMm > 2.6, 'handwriting is large enough for A4 (> 2.6 mm x-height)');
+  for (const w of WRITING_ORDER.filter((id) => WRITING[id].cursive)) assert.ok(lay({ paperId: 'classmate', writingId: w }).typography.xHeightMm > 2.3, `${w} cursive is readable`);
 });
 
 test('line spacing comes from font metrics: ruled pages follow the rules, unruled pages follow the font', () => {
@@ -87,13 +90,18 @@ test('long letters paginate; size and line grid never change (page 1 = page 2 = 
     const gap = long.settings.page.lineGap;
     const plain = PAPERS[paperId].kind === 'plain';
     for (const p of long.pages) {
+      // unruled: each block's reference is the mean baseline of its first line (glyphs float around it)
       const firstOf = {};
       for (const it of p.items) if (it.b && firstOf[it.b] === undefined) firstOf[it.b] = it.y;
+      for (const id of Object.keys(firstOf)) {
+        const row = p.items.filter((it) => it.b === id && (it.t === 'glyph' || it.t === 'text') && Math.abs(it.y - firstOf[id]) < gap / 2);
+        firstOf[id] = row.reduce((s2, it) => s2 + it.y, 0) / row.length;
+      }
       for (const it of p.items) {
         if ((it.t !== 'glyph' && it.t !== 'text') || !it.b) continue;
         const base = plain ? firstOf[it.b] : long.settings.page.first - (long.typography ? long.typography.lift : PAPERS[paperId].lift * gap / 7.6);
         const off = Math.abs((it.y - base) / gap - Math.round((it.y - base) / gap)) * gap;
-        assert.ok(off < 0.9, `${paperId}/${writingId}: "${it.ch || it.s}" ${off.toFixed(2)} mm off the line grid`);
+        assert.ok(off < (plain ? 1.2 : 0.9), `${paperId}/${writingId}: "${it.ch || it.s}" ${off.toFixed(2)} mm off the line grid`);
       }
     }
   }
@@ -199,5 +207,23 @@ test('library papers render with every student profile (developer lab)', () => {
     if (paperFonts(paperId).length) reg.get('sans');
     const r = lay({ paperId, writingId: 'neat' });
     checkBounds(r);
+  }
+});
+
+test('studio tap areas: one per written line, never overlapping (floating words included)', () => {
+  for (const writingId of WRITING_ORDER) {
+    for (const preset of ['natural', 'rushed']) {
+      const r = lay({ paperId: 'classmate', writingId, content: longContent, settings: { human: { preset } } });
+      for (const page of r.pages) {
+        const rects = [...pageToSvg(page, { interactive: true }).matchAll(/<rect class="hit" x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"/g)]
+          .map((m) => m.slice(1).map(Number));
+        assert.ok(rects.length > 0, 'tap areas present');
+        for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {
+          const [ax, ay, aw, ah] = rects[i], [bx, by, bw, bh] = rects[j];
+          const overlap = ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah;
+          assert.ok(!overlap, `${writingId}/${preset}: tap areas ${i} and ${j} overlap`);
+        }
+      }
+    }
   }
 });

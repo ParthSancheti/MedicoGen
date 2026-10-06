@@ -131,7 +131,7 @@ The admin console works on phone (bottom tabs, cards) and desktop (sidebar, dens
 - **One layout, two renderers.** The layout produces items positioned in millimetres. `render-svg.js` (preview) and `render-pdf.js` (export) draw the same items, using the same text matrix for glyph rotation and slant.
 - **No silent fallback.** A missing font fails loudly rather than quietly switching to Helvetica.
 
-**Writing × paper (chosen separately).** Students pick from four curated handwriting profiles and four papers. Every card is drawn by the real renderer: writing cards show several lines of the student's own letter, paper cards show the page's real geometry.
+**Writing × paper (chosen separately).** Students pick from seven curated handwriting profiles and four papers. Every card is drawn by the real renderer: writing cards show several lines of the student's own letter, paper cards show the page's real geometry.
 
 | Writing profile | Font | Character |
 |---|---|---|
@@ -139,6 +139,9 @@ The admin console works on phone (bottom tabs, cards) and desktop (sidebar, dens
 | Quick & flowing | Caveat | slanted, uses the font's contextual alternates |
 | Everyday ballpoint | Mynerve | casual pen, contextual alternates |
 | Steady & rounded | Kalam | rounded, darker ink |
+| Light & narrow | Shadows Into Light | narrow, quick strokes |
+| Slanted pen | Nothing You Could Do | leaning, loose, personal |
+| Joined cursive | Cedarville Cursive | joined-up letters; its long loops keep its x-height a little smaller |
 
 | Paper | Geometry |
 |---|---|
@@ -149,7 +152,7 @@ The admin console works on phone (bottom tabs, cards) and desktop (sidebar, dens
 
 The other fonts and papers remain in a developer library (Lab only). Fonts are SIL OFL, except Homemade Apple (Apache 2.0); licences are in `assets/fonts/`.
 
-**Metric typography: same size on every line and page.** Each font's x-height, cap height, ascender and descender are measured from its real outlines (fontkit), not guessed from the font size. The base size is then set so that the x-height is a fixed fraction of the line spacing. All four profiles therefore look the same size (x-height about 2.9–3.0 mm on Classmate rules), capped so ascenders and descenders never collide with the next line.
+**Metric typography: same size on every line and page.** Each font's x-height, cap height, ascender and descender are measured from its real outlines (fontkit), not guessed from the font size. The base size is then set so that the x-height is a fixed fraction of the line spacing. Print-style profiles therefore look the same size (x-height about 2.9–3.0 mm on Classmate rules). Every hand is capped so ascenders and descenders never collide with the next line, on unruled paper too.
 - **Ruled paper:** the paper's rules set the baseline grid.
 - **Unruled paper:** spacing comes from the font's metrics.
 
@@ -163,7 +166,8 @@ The size **never** shrinks for a long letter: it continues on page 2 with the sa
 The writing personality is coherent rather than random jitter:
 - **Smooth noise along the line:** neighbouring letters share a tendency in baseline, height, rotation, spacing, slant and ink.
 - **Personal variants:** each letter picks one of a few variants per document, so repeated letters differ but stay within limits.
-- **Word and line variation:** a per-word spacing and ink density, a gentle line drift (±0.35 mm, stays on the rule) and a slightly ragged left margin.
+- **Floating words:** each word lifts or dips a little, climbs or sinks along its length, and has its own size, slant and pen pressure. Word gaps are uneven, some words crowd together and some stand apart, and near the right edge the writer crowds the last words in. Every glyph stays within 0.7 mm of its line (Natural), so the writing never leaves its rule.
+- **Line variation:** a gentle line drift (±0.35 mm) and a slightly ragged left margin.
 - **Slips:** a few words written wrongly, struck through and rewritten. Neat has none, and names, dates and numbers are never touched.
 
 Everything comes from one seeded hash, never `Math.random`, so the preview and the PDF get identical instructions.
@@ -179,7 +183,7 @@ Everything comes from one seeded hash, never `Math.random`, so the preview and t
 - **Diagnostics:** font file, family and PostScript name, FontFace load status, OpenType features, measured vs OS/2 metrics, base size, x-height on the page, line-spacing source, baseline lift, writing width, page and glyph counts, seed and persona.
 - **Fine-tune:** the full precision sheet (writing, humanizer, page).
 - **Export & verify PDF:** checks that the PDF embeds the profile's own font and no standard font, and fails loudly otherwise.
-- **Quality grid:** the four profiles × four papers with the same text and seed.
+- **Quality grid:** each student profile × the four papers, with the same text and seed.
 - **Check AI.**
 
 The same grid as real PDFs + PNGs + a contact sheet, from the command line:
@@ -212,7 +216,7 @@ tools/                  dev server (+ Mistral proxy), template background builde
   - token accounting, idempotency, the two-model fallback chain, fact guard
   - referral rules, admin operations
   - metric typography, glyph-level humanizer, pagination without shrinking, preview/PDF parity
-  - All of this runs the real backend code in mock mode, with 31 Node tests and two browser walkthroughs.
+  - All of this runs the real backend code in mock mode, with 34 Node tests and two browser walkthroughs.
   - Generation source is labelled honestly in the studio: **Written by AI** (Mistral), **Mock AI (test mode)** or **Standard letter** (fallback).
 - **Written to Mistral's documented API but not called live from this build environment** (its network blocks api.mistral.ai): the real Mistral request. Test it with your key via `.env` + `npm run dev`, or after deploying.
 - **Not executed against Google here:** the Apps Script deployment itself, and the WhatsApp Cloud API path.

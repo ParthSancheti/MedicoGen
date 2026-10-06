@@ -63,7 +63,7 @@ const hand = (id, name, font, o = {}) => ({
 });
 
 export const WRITING = {
-  // ---- the four student-facing profiles (chosen from A4 comparisons, see README) ----
+  // ---- the student-facing profiles (chosen from A4 comparisons, see README) ----
   neat: hand('neat', 'Neat & clear', 'handlee', { blurb: 'Tidy, upright print, easy to read', ink: '#1c2a63', letterSpacing: 0.05,
     persona: { baseline: 0.85, rotation: 0.8, scale: 0.85, spacing: 0.8 }, papers: ['classmate', 'school', 'black_margin'] }),
   flowing: hand('flowing', 'Quick & flowing', 'caveat', { blurb: 'Fast, slanted, naturally varied letters', ink: '#0d2a8a', optical: 0.38, slant: 1.5, letterSpacing: -0.04, wordSpacing: 1.05,
@@ -72,6 +72,12 @@ export const WRITING = {
     persona: { baseline: 1, rotation: 1, scale: 1, spacing: 1, variants: 3 }, papers: ['black_margin', 'classmate', 'school'] }),
   steady: hand('steady', 'Steady & rounded', 'kalam', { blurb: 'Rounded letters with a calm rhythm', ink: '#14161c', optical: 0.38,
     persona: { baseline: 0.9, rotation: 0.9, scale: 0.9, spacing: 0.95 }, papers: ['school', 'classmate', 'cream'] }),
+  quick: hand('quick', 'Light & narrow', 'shadows', { blurb: 'Narrow, quick strokes, like a fast note-taker', ink: '#1a2b6d', optical: 0.385, wordSpacing: 1.1,
+    persona: { baseline: 1.1, rotation: 1.1, scale: 1, spacing: 1.15 }, papers: ['classmate', 'black_margin', 'cream'] }),
+  slanted: hand('slanted', 'Slanted pen', 'nothing', { blurb: 'Leaning, loose and personal', ink: '#14205a', optical: 0.38,
+    persona: { baseline: 1.15, rotation: 1.1, scale: 1.05, spacing: 1.1 }, papers: ['classmate', 'cream', 'school'] }),
+  cursive: hand('cursive', 'Joined cursive', 'cedarville', { blurb: 'Joined-up letters, written without lifting the pen', ink: '#1b2459', tag: 'Cursive', cursive: true,
+    persona: { baseline: 1, rotation: 0.9, scale: 1, spacing: 0.9 }, papers: ['cream', 'classmate', 'black_margin'] }),
   // ---- library (developer Handwriting Lab and documents saved earlier) ----
   handlee: hand('handlee', 'Handlee', 'handlee'),
   kalam: hand('kalam', 'Kalam', 'kalam', { bold: 'kalamBold' }),
@@ -93,9 +99,9 @@ export const WRITING = {
   classic: { id: 'classic', name: 'Classic', tag: 'Formal', fonts: { body: 'baskerville', bold: 'baskervilleBold' }, size: 10.3, lineHeight: 6.3, ink: '#1b1a18', labelInk: '#1b1a18', type: 'print' }
 };
 
-/** What students see: four curated handwriting profiles. */
-export const WRITING_ORDER = ['neat', 'flowing', 'ballpoint', 'steady'];
-export const WRITING_LIBRARY = ['neat', 'flowing', 'ballpoint', 'steady', 'handlee', 'kalam', 'patrick', 'caveat', 'mynerve', 'covered', 'architects', 'shadows', 'gochi',
+/** What students see: seven curated handwriting profiles. */
+export const WRITING_ORDER = ['neat', 'flowing', 'ballpoint', 'steady', 'quick', 'slanted', 'cursive'];
+export const WRITING_LIBRARY = ['neat', 'flowing', 'ballpoint', 'steady', 'quick', 'slanted', 'cursive', 'handlee', 'kalam', 'patrick', 'caveat', 'mynerve', 'covered', 'architects', 'shadows', 'gochi',
   'schoolbell', 'indie', 'dawning', 'cedarville', 'nothing', 'homemade', 'academic', 'modern', 'classic'];
 
 export function styleFonts(writingId) {
@@ -207,7 +213,7 @@ export function handTypography(m, writing, paper, page, sizeFactor = 1) {
     const maxMm = (lineGap * 1.02) / (m.ascender + m.descender); // tails may touch, never collide
     sizeMm = Math.min(sizeMm, maxMm);
   } else {
-    sizeMm = (7.6 * target) / m.xHeight;                          // same optical size as on a notebook
+    sizeMm = Math.min((7.6 * target) / m.xHeight, (7.6 * 1.02) / (m.ascender + m.descender)); // same size as on a notebook
     lineGap = Math.max((sizeMm * m.xHeight) / target, sizeMm * (m.ascender + m.descender) * 1.1) * writing.lineFactor;
   }
   // writing sits just above the rule; deeper descenders lift it a touch less so tails stay short

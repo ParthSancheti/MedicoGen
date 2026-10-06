@@ -6,7 +6,7 @@ import { iconEl } from '../ui/icons.js';
 import { app } from '../core/state.js';
 import { TEMPLATES, TEMPLATE_ORDER, DEMO_NOTICE } from '../doc/templates.js';
 import { formatFieldValue } from '../doc/template-layout.js';
-import { runWizard, textField } from './wizard.js';
+import { runWizard, textField, dateValue } from './wizard.js';
 import { generate } from './generate.js';
 
 const base = new URL('../../', import.meta.url);
@@ -51,7 +51,8 @@ export function render(root, { navigate }) {
           let node;
           if (f.input === 'date' || f.input === 'number') {
             const input = h('input.input', { type: f.input, value: d.fields[f.id] || '', min: f.input === 'number' ? 1 : undefined, max: f.input === 'number' ? 120 : undefined, inputmode: f.input === 'number' ? 'numeric' : undefined, 'aria-label': f.label });
-            input.addEventListener('input', () => { d.fields[f.id] = input.value; ui.changed(); });
+            const read = () => { d.fields[f.id] = f.input === 'date' ? dateValue(input) : input.value; ui.changed(); };
+            input.addEventListener('input', read); input.addEventListener('change', read);
             node = h('div.field', h('label', f.label, f.required ? null : h('span.subtle', ' (optional)')), input, ui.error(key));
           } else if (f.input === 'select') {
             const wrap = h('div.segmented', f.options.map((o) => {

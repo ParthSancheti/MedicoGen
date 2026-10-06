@@ -10,7 +10,7 @@
 var DEMO_TEMPLATE_IDS_ = ['demo-fitness', 'demo-leave', 'demo-opd'];
 // A letter's look is stored as "paper|writing" in the style column (e.g. "classmate|handlee").
 var PAPER_IDS_ = ['classmate', 'school', 'college', 'wide', 'register', 'black_margin', 'exam', 'legal', 'kraft', 'graph', 'dots', 'cream', 'plain'];
-var WRITING_IDS_ = ['neat', 'flowing', 'ballpoint', 'steady', 'handlee', 'kalam', 'patrick', 'caveat', 'mynerve', 'covered', 'architects', 'shadows', 'gochi', 'schoolbell', 'indie',
+var WRITING_IDS_ = ['neat', 'flowing', 'ballpoint', 'steady', 'quick', 'slanted', 'cursive', 'handlee', 'kalam', 'patrick', 'caveat', 'mynerve', 'covered', 'architects', 'shadows', 'gochi', 'schoolbell', 'indie',
   'dawning', 'cedarville', 'nothing', 'homemade', 'academic', 'modern', 'classic'];
 /** Precision settings: group → key → [min, max]. Mirrors SETTINGS_SPEC in js/doc/styles.js. */
 var SETTINGS_RANGES_ = {
