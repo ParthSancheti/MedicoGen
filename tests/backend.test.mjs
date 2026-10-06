@@ -9,7 +9,7 @@ const PNG_1PX = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAA
 
 function boot(props = {}) {
   const state = emptyState();
-  Object.assign(state.props, { MOCK_MODE: 'true', GEMINI_API_KEY: 'mock', ADMIN_PASSWORD: 'admin', APP_URL: 'https://example.test', ...props });
+  Object.assign(state.props, { MOCK_MODE: 'true', MISTRAL_API_KEY: 'mock', ADMIN_PASSWORD: 'admin', APP_URL: 'https://example.test', ...props });
   const be = loadBackend(sources, createRuntime(state));
   be.setupMock_();
   const call = (action, p = {}) => be.handle_({ action, ...p });
@@ -42,7 +42,7 @@ test('letter generation consumes once per idempotency key and stops at zero', ()
   const id = gid();
   const a = call('letter.generate', { code: 'MG-TEST-001', generationId: id, input: letterInput(), style: 'notebook' });
   assert.equal(a.ok, true, JSON.stringify(a));
-  assert.equal(a.data.generation.source, 'gemini');
+  assert.equal(a.data.generation.source, 'mistral');
   assert.equal(a.data.token.remaining, 2);
   assert.ok(a.data.generation.content.paragraphs.length >= 2);
   const replay = call('letter.generate', { code: 'MG-TEST-001', generationId: id, input: letterInput(), style: 'notebook' });
@@ -56,8 +56,8 @@ test('letter generation consumes once per idempotency key and stops at zero', ()
   assert.equal(call('history.list', { code: 'MG-TEST-001' }).data.items.length, 3);
 });
 
-test('Gemini 429 falls back to the standard letter and opens a cooldown', () => {
-  const { call } = boot({ MOCK_GEMINI: '429' });
+test('Mistral 429 falls back to the standard letter and opens a cooldown', () => {
+  const { call } = boot({ MOCK_AI: '429' });
   const r = call('letter.generate', { code: 'MG-TEST-001', generationId: gid(), input: letterInput() });
   assert.equal(r.ok, true);
   assert.equal(r.data.generation.source, 'fallback');
@@ -67,7 +67,7 @@ test('Gemini 429 falls back to the standard letter and opens a cooldown', () => 
 
 test('malformed and fact-inventing AI output is rejected', () => {
   for (const mode of ['garbage', 'invent', 'error']) {
-    const { call } = boot({ MOCK_GEMINI: mode });
+    const { call } = boot({ MOCK_AI: mode });
     const r = call('letter.generate', { code: 'MG-TEST-001', generationId: gid(), input: letterInput() });
     assert.equal(r.data.generation.source, 'fallback', mode);
     assert.doesNotMatch(JSON.stringify(r.data.generation.content), /typhoid|Hospital/);
@@ -75,7 +75,7 @@ test('malformed and fact-inventing AI output is rejected', () => {
 });
 
 test('no API key → deterministic letter, still usable', () => {
-  const { call } = boot({ GEMINI_API_KEY: '' });
+  const { call } = boot({ MISTRAL_API_KEY: '' });
   const r = call('letter.generate', { code: 'MG-TEST-001', generationId: gid(), input: letterInput({ letterType: 'leave' }) });
   assert.equal(r.data.generation.source, 'fallback');
   assert.match(r.data.generation.content.paragraphs[0], /request leave/);
@@ -98,7 +98,8 @@ test('edits are saved without consuming attempts', () => {
   assert.equal(s.ok, true, JSON.stringify(s));
   const g = call('generation.get', { code: 'MG-TEST-001', generationId: id });
   assert.equal(g.data.generation.content.subject, 'Edited');
-  assert.equal(g.data.generation.style, 'academic');
+  assert.equal(g.data.generation.paper, 'plain');
+  assert.equal(g.data.generation.writing, 'academic');
   assert.equal(g.data.token.remaining, 2);
 });
 
@@ -186,4 +187,29 @@ test('admin token operations', () => {
   call('letter.generate', { code, generationId: gid(), input: letterInput() });
   call('admin.tokens.update', { adminToken, code, op: 'reset' });
   assert.equal(call('access.validate', { code }).data.token.remaining, 5);
+});
+
+test('all five tones produce a complete letter, online and offline', () => {
+  for (const tone of ['formal', 'warm', 'simple', 'sincere', 'brief']) {
+    for (const props of [{}, { MISTRAL_API_KEY: '' }]) {
+      const { call } = boot(props);
+      const r = call('letter.generate', { code: 'MG-TEST-001', generationId: gid(), input: letterInput({ tone }) });
+      assert.equal(r.ok, true, tone);
+      const c = r.data.generation.content;
+      assert.ok(c.subject && c.salutation === 'Respected Sir,' && c.paragraphs.length >= 2 && c.closing && c.signoff, tone);
+      assert.equal(r.data.generation.input.tone, tone);
+    }
+  }
+});
+
+test('paper and handwriting choices persist', () => {
+  const { call } = boot();
+  const id = gid();
+  const r = call('letter.generate', { code: 'MG-TEST-001', generationId: id, input: letterInput(), paper: 'legal', writing: 'caveat' });
+  assert.equal(r.data.generation.paper, 'legal');
+  assert.equal(r.data.generation.writing, 'caveat');
+  call('document.save', { code: 'MG-TEST-001', generationId: id, writing: 'patrick' });
+  const g = call('generation.get', { code: 'MG-TEST-001', generationId: id }).data.generation;
+  assert.equal(g.paper, 'legal');
+  assert.equal(g.writing, 'patrick');
 });

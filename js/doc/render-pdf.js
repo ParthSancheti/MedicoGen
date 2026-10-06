@@ -74,7 +74,8 @@ export async function renderPdf({ pages, registry, PDFLib, fontkit, loadImage, m
           font: embedded[it.f],
           color: hexToRgb(PDFLib, it.color),
           opacity: it.opacity != null ? it.opacity : 1,
-          rotate: PDFLib.degrees(-(it.rot || 0))
+          rotate: PDFLib.degrees(-(it.rot || 0)),
+          ySkew: PDFLib.degrees(it.skew || 0) // leans glyph verticals forward (xSkew would tilt the baseline)
         });
       }
     }

@@ -2,7 +2,7 @@
  * Mock backend for the browser: fetches the Apps Script sources and runs them against the
  * in-memory runtime, persisting the fake spreadsheet to localStorage.
  * Developer switches (URL params, mock mode only):
- *   ?gemini=429|error|garbage|invent|ok  simulate Gemini behaviour
+ *   ?ai=429|error|garbage|invent|ok      simulate Mistral behaviour (ok = real key via dev proxy if set)
  *   ?resetmock=1                          wipe the mock database
  */
 import { createRuntime, emptyState, loadBackend, BACKEND_FILES } from './gas-runtime.js';
@@ -40,11 +40,11 @@ async function boot() {
   const state = loadState();
   Object.assign(state.props, {
     MOCK_MODE: 'true',
-    GEMINI_API_KEY: 'mock-key',
+    MISTRAL_API_KEY: 'mock-key',
     ADMIN_PASSWORD: 'admin',
     APP_URL: location.origin + location.pathname.replace(/[^/]*$/, '')
   });
-  state.props.MOCK_GEMINI = params.get('gemini') || 'ok'; // per page load, never sticky
+  state.props.MOCK_AI = params.get('ai') || 'ok'; // per page load, never sticky
   current = state;
   const runtime = createRuntime(state, { onChange: () => { dirty = true; }, log: (...a) => console.debug('[mock-backend]', ...a) });
   const be = loadBackend(sources, runtime);
@@ -56,7 +56,7 @@ async function boot() {
 export async function mockCall(payload) {
   if (!backendPromise) backendPromise = boot();
   const be = await backendPromise;
-  // simulate network + Gemini latency so loading states are real
+  // simulate network + AI latency so loading states are real
   const slow = payload.action === 'letter.generate' ? 2600 : payload.action === 'access.request' ? 900 : 260;
   await new Promise((r) => setTimeout(r, slow * (0.8 + Math.random() * 0.4)));
   // Another tab (e.g. the admin console) may have written since we loaded: pick up its changes.

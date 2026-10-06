@@ -2,13 +2,16 @@
  * Medico Gen — generation accounting and document history.
  *
  * A generation is reserved under the script lock (attempt counted + row written) BEFORE any slow
- * work such as the Gemini call, then completed outside the lock. The client-supplied
+ * work such as the Mistral call, then completed outside the lock. The client-supplied
  * generationId is an idempotency key: retries, double taps and network replays with the same id
  * return the original generation instead of consuming another attempt.
  */
 
 var DEMO_TEMPLATE_IDS_ = ['demo-fitness', 'demo-leave', 'demo-opd'];
-var STYLE_IDS_ = ['notebook', 'academic', 'modern', 'classic'];
+// A letter's look is stored as "paper|writing" in the style column (e.g. "classmate|handlee").
+var PAPER_IDS_ = ['classmate', 'black_margin', 'legal', 'cream', 'plain'];
+var WRITING_IDS_ = ['handlee', 'caveat', 'patrick', 'gochi', 'schoolbell', 'indie', 'kalam', 'academic', 'modern', 'classic'];
+var LEGACY_STYLES_ = { notebook: 'classmate|kalam', academic: 'plain|academic', modern: 'plain|modern', classic: 'cream|classic' };
 
 function cleanGenerationId_(value) {
   var id = String(value || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 64);
@@ -21,6 +24,8 @@ function generationView_(g) {
     id: g.generationId,
     kind: g.kind,
     style: g.style,
+    paper: g.kind === 'letter' ? splitLook_(g.style).paper : undefined,
+    writing: g.kind === 'letter' ? splitLook_(g.style).writing : undefined,
     title: g.title,
     status: g.status,
     source: g.source,
@@ -77,15 +82,28 @@ function completeGeneration_(gen, content, source) {
   });
 }
 
-function cleanStyle_(style) {
-  return STYLE_IDS_.indexOf(style) >= 0 ? style : 'notebook';
+function splitLook_(style) {
+  var v = LEGACY_STYLES_[style] || String(style || '');
+  var parts = v.split('|');
+  return {
+    paper: PAPER_IDS_.indexOf(parts[0]) >= 0 ? parts[0] : 'classmate',
+    writing: WRITING_IDS_.indexOf(parts[1]) >= 0 ? parts[1] : 'handlee'
+  };
+}
+
+/** Builds the stored "paper|writing" from request params, keeping current values for anything not sent. */
+function cleanStyle_(p, current) {
+  var base = splitLook_(p.style || current);
+  var paper = PAPER_IDS_.indexOf(p.paper) >= 0 ? p.paper : base.paper;
+  var writing = WRITING_IDS_.indexOf(p.writing) >= 0 ? p.writing : base.writing;
+  return paper + '|' + writing;
 }
 
 /* ---------- public actions ---------- */
 
 function apiGenerateLetter_(p) {
   var input = normalizeLetterInput_(p.input || {});
-  var style = cleanStyle_(p.style);
+  var style = cleanStyle_(p, '');
   var title = letterTitle_(input);
   var reserved = reserveGeneration_(p, 'letter', style, title, input);
   var gen = reserved.gen;
@@ -95,7 +113,7 @@ function apiGenerateLetter_(p) {
     return { generation: generationView_(gen), token: tokenView_(findOne_('Tokens', 'code', gen.code)), replay: true };
   }
 
-  var result = composeLetter_(input);          // Gemini, or deterministic fallback; never throws
+  var result = composeLetter_(input);          // Mistral, or deterministic fallback; never throws
   gen = completeGeneration_(gen, result.content, result.source);
   logEvent_('generate.letter', gen.code, result.source + (result.reason ? ':' + result.reason : ''));
   return {
@@ -131,7 +149,7 @@ function apiGetGeneration_(p) {
   return { generation: generationView_(gen), token: tokenView_(t) };
 }
 
-/** Saves student edits (wording, their own details) and style changes. Free: no attempt is consumed and Gemini is not called. */
+/** Saves student edits (wording, their own details) and style changes. Free: no attempt is consumed and the AI is not called. */
 function apiSaveDocument_(p) {
   var t = requireToken_(p.code);
   return withLock_(function () {
@@ -139,7 +157,7 @@ function apiSaveDocument_(p) {
     if (!gen || gen.code !== t.code) fail_('NOT_FOUND', 'Document not found.');
     if (gen.status !== 'ready') fail_('VALIDATION', 'Document is still being generated.');
     var patch = { updatedAt: nowIso_() };
-    if (p.style && gen.kind === 'letter') patch.style = cleanStyle_(p.style);
+    if ((p.style || p.paper || p.writing) && gen.kind === 'letter') patch.style = cleanStyle_(p, gen.style);
     if (p.content && gen.kind === 'letter') patch.contentJson = JSON.stringify(sanitizeLetterContent_(p.content, true));
     if (p.input && gen.kind === 'letter') patch.inputJson = JSON.stringify(normalizeLetterInput_(p.input));
     if (p.content && gen.kind === 'demo') {

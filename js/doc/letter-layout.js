@@ -9,6 +9,7 @@
 import { A4, PAPERS, WRITING } from './styles.js';
 import { PT } from './fonts.js';
 import { seededRandom, wrapTokens, longDate } from './text.js';
+import { HUMANIZE, handTokens, lineWander, emitHand } from './handwriting.js';
 
 /* ---------- content → blocks ---------- */
 
@@ -57,45 +58,26 @@ const FIT_LEVELS = {
   flow: [{ size: 1, gap: 1 }, { size: 0.96, gap: 0.85 }, { size: 0.92, gap: 0.7 }, { size: 0.88, gap: 0.6 }]
 };
 
-export function layoutLetter({ input, content, paperId, writingId, registry, seed = 'mg' }) {
+export function layoutLetter({ input, content, paperId, writingId, registry, seed = 'mg', humanize = 'natural' }) {
   const paper = PAPERS[paperId] || PAPERS.classmate;
   const writing = WRITING[writingId] || WRITING.kalam;
   const levels = paper.ruled ? FIT_LEVELS.ruled : FIT_LEVELS.flow;
   let first = null;
   for (const level of levels) {
-    const result = layoutOnce(paper, writing, level, input, content, registry, seed);
+    const result = layoutOnce(paper, writing, level, input, content, registry, seed, HUMANIZE[humanize] || HUMANIZE.natural);
     if (!first) first = result;
     if (result.pages.length === 1) return result;
   }
   return first; // honest multi-page layout at full size
 }
 
-function tokenizeText(text, fontId, size, writing, rng, registry) {
+/** Printed styles: whole words, measured as typeset. */
+function printTokens(text, fontId, size, registry) {
   const spaceW = registry.width(fontId, ' ', size);
-  // Split punctuation to treat it separately for jitter
-  const tokens = text.match(/([\w\u00C0-\u017F]+|[^\s\w\u00C0-\u017F]+)/g) || [];
-  const out = [];
-  
-  for (const t of tokens) {
-    if (writing.split === 'char' && /^\w+$/.test(t)) {
-      // Split into characters
-      for (const char of t) {
-        const j = writing.jitter ? { ds: 1 + (rng() - 0.5) * 0.05, dy: (rng() - 0.5) * 0.6, rot: (rng() - 0.5) * 1.5, sp: (rng() - 0.5) * 0.2 } : { ds: 1, dy: 0, rot: 0, sp: 0 };
-        out.push({ text: char, f: fontId, size: size * j.ds, w: registry.width(fontId, char, size * j.ds), space: 0, j, isChar: true });
-      }
-      out[out.length - 1].space = spaceW + (writing.jitter ? (rng() - 0.2) * 0.5 : 0);
-    } else {
-      // Keep as word or punctuation
-      const isPunct = /^[^\w\u00C0-\u017F]+$/.test(t);
-      const j = writing.jitter ? { ds: 1 + (rng() - 0.5) * 0.04, dy: (rng() - 0.5) * 0.5, rot: (rng() - 0.5) * 1.2, sp: (rng() - 0.3) * 0.4 } : { ds: 1, dy: 0, rot: 0, sp: 0 };
-      if (isPunct && writing.jitter) { j.dy += (rng() - 0.5) * 1.0; j.sp -= 0.5; }
-      out.push({ text: t, f: fontId, size: size * j.ds, w: registry.width(fontId, t, size * j.ds), space: isPunct ? spaceW : spaceW + j.sp, j });
-    }
-  }
-  return out;
+  return text.split(/\s+/).filter(Boolean).map((w) => ({ text: w, f: fontId, size, w: registry.width(fontId, w, size), space: spaceW }));
 }
 
-function layoutOnce(paper, writing, level, input, content, registry, seed) {
+function layoutOnce(paper, writing, level, input, content, registry, seed, human) {
   const warnings = new Set();
   const rng = seededRandom(seed + paper.id + writing.id);
   const size = writing.size * level.size;
@@ -108,15 +90,20 @@ function layoutOnce(paper, writing, level, input, content, registry, seed) {
     return t;
   };
 
-  const tokenize = (text, fontId) => tokenizeText(clean(fontId, text), fontId, size, writing, rng, registry);
+  const hand = writing.type === 'hand';
+  // Mistakes only inside the body paragraphs, at most a couple per letter.
+  const budget = { left: Math.round(2 * human.errors) };
+  const tokenize = (text, fontId, opts = {}) => hand
+    ? handTokens(clean(fontId, text), { fontId, size, registry, rng, strength: human, errors: !!opts.errors, budget })
+    : printTokens(clean(fontId, text), fontId, size, registry);
 
   const splitToken = (tok, maxW) => {
     let cut = tok.text.length - 1;
     while (cut > 1 && registry.width(tok.f, tok.text.slice(0, cut) + '-', tok.size) > maxW) cut--;
-    const head = { ...tok, text: tok.text.slice(0, cut) + '-', w: registry.width(tok.f, tok.text.slice(0, cut) + '-', tok.size) };
-    const restText = tok.text.slice(cut);
-    const rest = restText ? { ...tok, text: restText, w: registry.width(tok.f, restText, tok.size) } : null;
-    return [head, rest];
+    const headText = tok.text.slice(0, cut) + '-', restText = tok.text.slice(cut);
+    const remake = (t) => (hand ? handTokens(t, { fontId: tok.f, size: tok.size, registry, rng, strength: human, errors: false, budget })[0]
+      : { ...tok, text: t, w: registry.width(tok.f, t, tok.size) });
+    return [remake(headText), restText ? remake(restText) : null];
   };
 
   const blocks = buildLetterBlocks(input, content);
@@ -146,7 +133,7 @@ function layoutOnce(paper, writing, level, input, content, registry, seed) {
         rows.push({ parts });
       });
     } else if (b.kind === 'para') {
-      const lines = wrapTokens(tokenize(b.text, bodyFont), width, paper.indent, 0, splitToken);
+      const lines = wrapTokens(tokenize(b.text, bodyFont, { errors: true }), width, paper.indent, 0, splitToken);
       lines.forEach((wl, i) => {
         const last = i === lines.length - 1;
         rows.push({ parts: [{ tokens: wl.tokens, x: left + wl.indent, align: paper.align === 'justify' && !last ? 'justify' : 'left', width: width - wl.indent }] });
@@ -200,16 +187,31 @@ function layoutOnce(paper, writing, level, input, content, registry, seed) {
     }
   }
 
+  const totalRows = pages.reduce((n, p) => n + p.length, 0) || 1;
+  let rowNo = 0;
   const out = pages.map((rows, pi) => {
     const items = pageDecor(paper, pi, pages.length, registry, writing);
     for (const { row, y: baseline, unitId, underline } of rows) {
-      const lineSlope = writing.jitter ? (rng() - 0.5) * 0.6 : 0;
-      for (const part of row.parts) emitPart(items, part, baseline, unitId, writing, lineSlope);
-      
-      if (underline && row.parts.length) {
-        const lastPart = row.parts[row.parts.length - 1];
-        const span = lastPart.tokens.reduce((n, t, i) => n + t.w + (i < lastPart.tokens.length - 1 ? t.space : 0), 0);
-        items.push({ t: 'line', x1: row.parts[0].x, y1: baseline + 1.5, x2: lastPart.x + span, y2: baseline + 1.5 - lineSlope, sw: 0.25, color: writing.ink, opacity: 0.7 });
+      const fatigue = rowNo++ / totalRows;             // writing gets a little looser down the page
+      let endX = 0, startX = row.parts[0].x;
+      if (hand) {
+        const wander = lineWander(rng, human.line * (1 + fatigue * 0.4));
+        const drift = (rng() - 0.5) * 1.3 * human.line;  // ragged left margin
+        row.parts.forEach((part, pi2) => {
+          const x0 = part.x + (pi2 === 0 && part.align !== 'right' ? drift : 0);
+          if (pi2 === 0) startX = x0;
+          endX = emitHand(items, part.tokens, { x0, baseline, wander, color: part.label ? writing.labelInk : writing.ink, blockId: unitId, rng, fatigue });
+        });
+        if (underline) {
+          items.push({ t: 'line', x1: startX - 0.4, y1: baseline + 1.3 + wander(0), x2: endX + 0.6, y2: baseline + 1.3 + wander(endX - startX) + (rng() - 0.5) * 0.5, sw: 0.26, color: writing.ink, opacity: 0.75 });
+        }
+      } else {
+        for (const part of row.parts) emitPart(items, part, baseline, unitId, writing);
+        if (underline && row.parts.length) {
+          const lastPart = row.parts[row.parts.length - 1];
+          const span = lastPart.tokens.reduce((n, t, i) => n + t.w + (i < lastPart.tokens.length - 1 ? t.space : 0), 0);
+          items.push({ t: 'line', x1: row.parts[0].x, y1: baseline + 1.5, x2: lastPart.x + span, y2: baseline + 1.5, sw: 0.25, color: writing.ink, opacity: 0.7 });
+        }
       }
     }
     return { w: A4.w, h: A4.h, items };
@@ -217,29 +219,21 @@ function layoutOnce(paper, writing, level, input, content, registry, seed) {
   return { pages: out, warnings: [...warnings], paper: paper.id, writing: writing.id, fitLevel: level.tight || level.size < 1 ? 1 : 0 };
 }
 
-function emitPart(items, part, baseline, blockId, writing, lineSlope) {
+/** Printed styles: one run per line, or one item per word when justified. */
+function emitPart(items, part, baseline, blockId, writing) {
   const toks = part.tokens;
   if (!toks.length) return;
   const color = part.label ? writing.labelInk : writing.ink;
   const natural = toks.reduce((n, t, i) => n + t.w + (i < toks.length - 1 ? t.space : 0), 0);
-  
-  if (part.align === 'left' && !writing.jitter && writing.split === 'word') {
-    const text = toks.map((t) => t.text).join(' ');
-    items.push({ t: 'text', x: part.x, y: baseline, s: text, f: toks[0].f, size: toks[0].size, w: natural, color, b: blockId });
+  if (part.align !== 'justify' || toks.length < 2) {
+    items.push({ t: 'text', x: part.x, y: baseline, s: toks.map((t) => t.text).join(' '), f: toks[0].f, size: toks[0].size, w: natural, color, b: blockId });
     return;
   }
-  
-  let extra = 0;
-  if (part.align === 'justify' && toks.length > 1) {
-    extra = (part.width - natural) / (toks.length - 1);
-    if (extra > 6) extra = 0;
-  }
+  let extra = (part.width - natural) / (toks.length - 1);
+  if (extra > 6) extra = 0; // never stretch a nearly empty line
   let x = part.x;
-  const span = Math.max(natural, 1);
   toks.forEach((t, i) => {
-    const dy = (t.j ? t.j.dy : 0) + lineSlope * ((x - part.x) / span);
-    const opacity = writing.jitter ? 0.88 + Math.random() * 0.12 : 1;
-    items.push({ t: 'text', x, y: baseline + dy, s: t.text, f: t.f, size: t.size, w: t.w, color, rot: (t.j ? t.j.rot : 0) || 0, b: blockId, opacity });
+    items.push({ t: 'text', x, y: baseline, s: t.text, f: t.f, size: t.size, w: t.w, color, b: blockId });
     x += t.w + (i < toks.length - 1 ? t.space + extra : 0);
   });
 }

@@ -4,7 +4,7 @@
  * Public, non-secret defaults live here. Every key can be overridden without editing code via
  * Project Settings → Script Properties. Secrets ONLY live in Script Properties:
  *
- *   GEMINI_API_KEY     Google AI Studio key (never sent to the browser)
+ *   MISTRAL_API_KEY    Mistral La Plateforme key (console.mistral.ai → API Keys). Never sent to the browser.
  *   ADMIN_PASSWORD     Admin console password (compared server-side)
  *   SPREADSHEET_ID     Operational database (created by setup() if missing)
  *   DRIVE_FOLDER_ID    Folder for payment screenshots (created by setup() if missing)
@@ -17,8 +17,9 @@ var MG_DEFAULTS = {
   REFERRAL_TARGET: 5,                // verified invites per reward
   REFERRAL_REWARD_INR: 10,
   PRICE_INR: 49,                     // shown to students; payment itself is verified by an admin
-  GEMINI_MODEL: 'gemini-2.5-flash',
-  GEMINI_TIMEOUT_COOLDOWN_SEC: 90,   // after a 429 we stop calling Gemini for this long
+  MISTRAL_MODEL: 'mistral-small-latest',          // primary model, strict JSON schema
+  MISTRAL_FALLBACK_MODEL: 'open-mistral-nemo',     // second try (json_object mode) before the offline letter
+  AI_COOLDOWN_SEC: 60,               // after a 429 we stop calling Mistral for this long
   WHATSAPP_PROVIDER: 'link',         // 'link' (prefilled wa.me link for the admin) | 'cloud_api'
   ADMIN_SESSION_HOURS: 6,
   MOCK_MODE: 'false'                 // set by the in-browser mock runtime only
@@ -53,8 +54,8 @@ function publicConfig_() {
     referralTarget: cfgInt_('REFERRAL_TARGET'),
     referralRewardInr: cfgInt_('REFERRAL_REWARD_INR'),
     priceInr: cfgInt_('PRICE_INR'),
-    aiModel: cfg_('GEMINI_MODEL'),
-    aiConfigured: !!secret_('GEMINI_API_KEY', true),
+    aiModel: cfg_('MISTRAL_MODEL'),
+    aiConfigured: !!secret_('MISTRAL_API_KEY', true),
     mock: isMock_()
   };
 }

@@ -26,7 +26,14 @@ export function pageToSvg(page, { className = 'doc-page', interactive = false } 
         const meta = FONT_FILES[it.f];
         const size = it.size * PT;
         const fit = it.s.length > 1 && it.w > 0 ? ` textLength="${r(it.w)}" lengthAdjust="spacing"` : '';
-        const rot = it.rot ? ` transform="rotate(${r(it.rot)} ${r(it.x)} ${r(it.y)})"` : '';
+        // Same text matrix pdf-lib builds (rotate + ySkew), mirrored into y-down SVG space, so glyph
+        // rotation and slant are identical in preview and PDF.
+        let rot = '';
+        if (it.rot || it.skew) {
+          const a = ((it.rot || 0) * Math.PI) / 180, k = Math.tan(((it.skew || 0) * Math.PI) / 180);
+          const m = [Math.cos(a), Math.sin(a), -Math.sin(a) - k, Math.cos(a)].map((v) => Math.round(v * 1e5) / 1e5);
+          rot = ` transform="matrix(${m.join(' ')} ${r(it.x)} ${r(it.y)}) translate(${r(-it.x)} ${r(-it.y)})"`;
+        }
         const op = it.opacity != null ? ` fill-opacity="${it.opacity}"` : '';
         const data = interactive && it.b ? ` data-block="${escapeXml(it.b)}"` : '';
         parts.push(`<text x="${r(it.x)}" y="${r(it.y)}" font-family="'${meta.family}'" font-weight="${meta.weight}" font-size="${r(size)}" fill="${it.color}"${op}${fit}${rot}${data}>${escapeXml(it.s)}</text>`);

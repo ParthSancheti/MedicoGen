@@ -9,6 +9,15 @@ import { longDate } from '../doc/text.js';
 import { runWizard, textField, choiceChips } from './wizard.js';
 import { generate } from './generate.js';
 
+/** Five voices; ids match TONES_ in apps-script/Letters.js (prompt + offline letter). */
+const TONES = [
+  { id: 'formal', emoji: '\u{1F393}', label: 'Formal', hint: 'Classic & proper', sample: '\u201cI was unable to attend college from\u2026 I kindly request you to grant me leave.\u201d' },
+  { id: 'warm', emoji: '\u{1F60A}', label: 'Warm', hint: 'Polite & friendly', sample: '\u201cI truly value the classes and I would be grateful if you could\u2026\u201d' },
+  { id: 'simple', emoji: '\u{270F}\u{FE0F}', label: 'Simple', hint: 'Short, easy words', sample: '\u201cI could not come to college\u2026 Please grant me leave.\u201d' },
+  { id: 'sincere', emoji: '\u{1F64F}', label: 'Sincere', hint: 'Apologetic', sample: '\u201cI am sorry that I was not able to attend\u2026 I apologise for the inconvenience.\u201d' },
+  { id: 'brief', emoji: '\u{26A1}', label: 'Brief', hint: 'Straight to the point', sample: '\u201cI was absent\u2026 I will cover the missed work.\u201d' }
+];
+
 const DEPARTMENTS = ['Computer Engineering', 'Information Technology', 'Electronics & Telecommunication', 'Mechanical Engineering', 'Civil Engineering', 'Electrical Engineering', 'AI & Data Science'];
 const YEARS = ['First Year', 'Second Year', 'Third Year', 'Final Year'];
 const DESIGNATIONS = ['Head of Department', 'Professor & Head', 'Class Teacher', 'Class Coordinator', 'Principal'];
@@ -163,14 +172,23 @@ export function render(root, { navigate }) {
       validate: (d) => (d.recipient.designation.trim().length < 2 ? { 'recipient.designation': 'Add a designation, e.g. Head of Department.' } : {})
     },
     {
-      key: 'style', eyebrow: 'Tone', title: 'How should it sound?', text: 'Choose the tone of your letter.',
+      key: 'style', eyebrow: 'Tone', title: 'How should it sound?', text: 'Pick a voice. The AI writes your letter in this tone using everything you filled in.',
       render: (d, ui) => {
-        const tone = h('div.segmented', { role: 'group', 'aria-label': 'Tone' }, [['formal', 'Formal'], ['simple', 'Simple & warm']].map(([v, l]) => {
-          const b = h('button' + (d.tone === v ? '.on' : ''), { type: 'button' }, l);
-          b.addEventListener('click', () => { d.tone = v; ui.changed(); haptic('select'); tone.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); });
-          return b;
-        }));
-        return h('div.stack', h('div.field', h('label', 'Tone of writing'), tone));
+        const grid = h('div.tone-grid', { role: 'radiogroup', 'aria-label': 'Tone of writing' });
+        const blurb = h('p.tone-blurb', { 'aria-live': 'polite' });
+        const show = () => { const t = TONES.find((x) => x.id === d.tone) || TONES[0]; blurb.replaceChildren(h('b', t.label + ': '), t.sample); };
+        TONES.forEach((t) => {
+          const tile = h('button.tone-tile' + (d.tone === t.id ? '.on' : ''), { type: 'button', role: 'radio', 'aria-checked': String(d.tone === t.id), 'aria-label': t.label },
+            h('span.tone-emoji', { 'aria-hidden': 'true' }, t.emoji), h('span.tone-label', t.label), h('span.tone-hint', t.hint));
+          tile.addEventListener('click', () => {
+            d.tone = t.id; ui.changed(); haptic('select');
+            grid.querySelectorAll('.tone-tile').forEach((x) => { x.classList.toggle('on', x === tile); x.setAttribute('aria-checked', String(x === tile)); });
+            show();
+          });
+          grid.append(tile);
+        });
+        show();
+        return h('div.stack', grid, blurb);
       }
     },
     {
@@ -208,7 +226,7 @@ export function render(root, { navigate }) {
       }
     },
     {
-      key: 'review', eyebrow: 'Review', title: 'Ready to write?', text: (d) => `Gemini will write your letter using only these details. This uses 1 of your ${app.token.remaining} remaining generations.`,
+      key: 'review', eyebrow: 'Review', title: 'Ready to write?', text: (d) => `Mistral AI will write your letter using only these details. This uses 1 of your ${app.token.remaining} remaining generations.`,
       render: (d) => {
         const n = daysBetween(d.absence.from, d.absence.to);
         const rows = [
@@ -219,7 +237,7 @@ export function render(root, { navigate }) {
           ['Dates', n === 1 ? longDate(d.absence.from) : `${longDate(d.absence.from)} – ${longDate(d.absence.to)} (${n} days)`],
           ['Reason', d.absence.reason],
           ['To', [d.recipient.name, d.recipient.designation].filter(Boolean).join(', ')],
-          ['Paper', PAPERS[d.paper || 'classmate'].name + ' · ' + WRITING[d.writing || 'kalam'].name + ' (' + (d.tone === 'simple' ? 'simple' : 'formal') + ')']
+          ['Paper', PAPERS[d.paper || 'classmate'].name + ' · ' + WRITING[d.writing || 'kalam'].name + ' (' + ((TONES.find((t) => t.id === d.tone) || TONES[0]).label.toLowerCase()) + ')']
         ];
         return h('div.stack',
           h('div.card', h('dl.summary-dl', rows.map(([k, v]) => h('div', h('dt', k), h('dd', v || '—'))))),
@@ -247,6 +265,14 @@ export function render(root, { navigate }) {
   });
 }
 
+/** Zooms a picker preview into the subject and first lines, where the handwriting is readable. */
+export function previewCrop(host) {
+  const svg = host.querySelector('svg');
+  if (!svg) return;
+  svg.setAttribute('viewBox', '18 58 122 106');
+  svg.setAttribute('preserveAspectRatio', 'xMinYMin slice');
+}
+
 /** Style card preview: the top of the real page, rendered with the student's own details. */
 async function pickerPreview(host, paperId, writingId, d) {
   const { layoutDocument, pagesToSvg } = await import('../doc/engine.js');
@@ -258,12 +284,13 @@ async function pickerPreview(host, paperId, writingId, d) {
     content: {
       subject: `Application for leave ${d.absence.from ? (days === 1 ? 'on ' : 'from ') + period : ''}`.trim(),
       salutation: `Respected ${d.recipient.salutation || 'Sir'},`,
-      paragraphs: ['Your letter will be written here in this style, with the same font and spacing you see now.'],
+      paragraphs: ['I am writing to request leave for the above days. Your letter will look just like this, in the same handwriting and on the same paper.'],
       closing: 'Thanking you.', signoff: 'Yours obediently,'
     }
   };
   try {
     const { pages } = await layoutDocument(doc);
     host.innerHTML = pagesToSvg([pages[0]])[0];
+    previewCrop(host);
   } catch { /* preview optional */ }
 }

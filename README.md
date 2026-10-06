@@ -1,34 +1,83 @@
 # Medico Gen
 
-A mobile-first document generator for college students. Students unlock the app with an access code, answer a short guided wizard, and get a respectful leave/absence application to their HOD. Gemini writes it, and the app sets it in real handwriting or clean print and exports it as a true A4 PDF. There is also a separate, always-watermarked **medical template demonstration**.
+A mobile-first document generator for college students. A student unlocks the app with an access code and answers a short guided wizard. **Mistral AI** writes a respectful leave/absence application to their HOD in the tone they pick, and the app sets it in convincingly human handwriting (or clean print) on the paper they choose, exported as a true A4 PDF. There is also a separate, always-watermarked **medical template demonstration**.
 
-- **Frontend:** vanilla HTML/CSS/JS (ES modules), no build step. Static hosting works (GitHub Pages, Netlify, any web server).
+- **Frontend:** vanilla HTML/CSS/JS (ES modules), no build step. Any static host works (GitHub Pages, Netlify, Vercel, a web server).
 - **Backend:** Google Apps Script + Google Sheets (database) + Google Drive (payment screenshots).
-- **AI:** Gemini through Apps Script only. The key never reaches the browser.
+- **AI:** Mistral (`mistral-small-latest`), called from Apps Script only. The key never reaches the browser.
 
 ---
 
-## Quick start (mock mode, no credentials)
+## Quick start (mock mode)
 
 ```bash
 npm run dev          # http://localhost:5173
-npm test             # backend + layout/PDF tests (Node 18+)
+npm test             # backend + layout/PDF tests (Node 22+)
 ```
 
 With `apiUrl` empty in `js/config.js`, the app runs in **mock mode**. The *real* Apps Script code in `apps-script/` runs inside the browser against an in-memory Sheets/Drive/Cache stand-in, saved to localStorage.
+
+**Real Mistral letters while developing:** copy `.env.example` to `.env` and set `MISTRAL_API_KEY=...`. The dev server then proxies the mock backend's AI calls to Mistral (`/api/mistral`), and the key stays in Node. Without a key, a local composer returns letters in Mistral's response format. That composer is **not real AI**. `.env` is git-ignored and the dev server refuses to serve dotfiles.
 
 | Mock item | Value |
 |---|---|
 | Test access code | `MG-TEST-001`, 3 generations |
 | Expired / disabled test codes | `MG-TEST-EXP` / `MG-TEST-OFF` |
 | Admin console | `/admin.html`, password `admin` (mock only) |
-| Simulate Gemini | `?gemini=429` · `error` · `garbage` · `invent` · `ok` |
+| Simulate the AI | `?ai=429` · `error` · `garbage` · `invent` · `ok` |
 | Reset mock database | `?resetmock=1` |
-| Developer tools | `?dev=1` (font diagnostics, template field boxes + mm coordinate readout) |
-
-In mock mode, the "Gemini" answer comes from a local composer (`js/mock/mock-gemini.js`) that returns the same JSON shape as the real API. **It is not real AI.**
+| Developer tools | `?dev=1` (font diagnostics, template field boxes); `#/dev` font lab with a free **Check Mistral** health check |
 
 Browser walkthroughs (with the dev server running): `node tests/e2e.mjs out/` and `node tests/e2e-admin.mjs out/`.
+
+---
+
+## Enabling Mistral (step by step)
+
+1. Sign in at **https://console.mistral.ai** (Mistral "La Plateforme").
+2. **Billing / Plans:** choose a plan. The free *Experiment* plan works for testing, with low rate limits. For real traffic, use a paid *Scale* plan.
+3. **API Keys → Create new key.** Copy it once; it is not shown again.
+4. In your Apps Script project: **Project Settings → Script Properties → Add** `MISTRAL_API_KEY` = your key.
+5. Optional properties: `MISTRAL_MODEL` (default `mistral-small-latest`), `MISTRAL_FALLBACK_MODEL` (default `open-mistral-nemo`), `AI_COOLDOWN_SEC` (default 60).
+6. Redeploy the web app (**Deploy → Manage deployments → Edit → New version**).
+7. Check it: the admin Overview stops warning about a missing key. In the app's `#/dev` page, **Check Mistral** reports the model.
+
+API used: `POST https://api.mistral.ai/v1/chat/completions` with `Authorization: Bearer <key>` and `response_format: { type: "json_schema", json_schema: { name, schema, strict: true } }`. The reply is read from `choices[0].message.content`.
+
+### The fallback chain: the student always gets a finished letter
+
+1. **Primary model with a strict JSON schema** returns `subject`, `salutation`, `paragraphs[]`, `closing` and `signoff`.
+2. **If that fails** (bad JSON, server error, timeout, or the fact check rejects it), there is **one** retry on `MISTRAL_FALLBACK_MODEL` in `json_object` mode.
+3. **Built-in letter.** If both fail, or on a 429 rate limit (which also starts a short cooldown, so we never hammer the API), the backend writes a deterministic letter. It uses the **same tone** and only the student's own facts.
+
+Every AI answer is validated, then checked for invented facts: any doctor, hospital, diagnosis, medicine or number the student never typed gets the answer thrown out. Raw API errors are never shown to students.
+
+### The five tones ("How should it sound?")
+🎓 **Formal** · 😊 **Warm** · ✏️ **Simple** · 🙏 **Sincere** (apologetic) · ⚡ **Brief**
+
+Each tone changes the system prompt and the built-in letter. The prompt receives everything the student entered:
+- name, year, division, department, college
+- letter type, exact dates and day count
+- reason category and the reason in their own words
+- whether documents are attached
+- the recipient's name, designation and salutation
+
+---
+
+## Do we need Google Apps Script, or is the website alone enough?
+
+**The website alone is not enough.** A static website runs entirely in the student's browser, and anything a browser stores or decides can be edited by that student. Without a server:
+
+- **Access codes and attempt counts could be faked.** Students could edit localStorage, or the JavaScript itself, to unlock the app or give themselves unlimited generations.
+- **The Mistral key would be public.** Anyone could copy it from the page source and run up your bill.
+- **There is no shared database.** Payment requests, screenshots, issued codes, referrals and admin approvals need one place that every device and the admin see. Browser storage is per-device and per-browser.
+- **The admin password can't be checked safely.** It would have to ship inside the website.
+
+**Apps Script is the smallest server that solves all of this, for free.** It keeps the key and password secret, holds the counters in Sheets, and uses `LockService` so two simultaneous taps can't both spend the last generation. Screenshots go to your Drive.
+
+**Alternatives** if you outgrow it: Cloudflare Workers + D1, Supabase, Firebase, or a small Node server. The frontend only talks to one API contract (`js/core/api.js`), so you would swap the backend without touching the UI. For a small product, Apps Script + Sheets is the simplest secure option.
+
+Mock mode is the one exception: it deliberately runs the backend in the browser for testing, and it must never be used in production.
 
 ---
 
@@ -41,44 +90,57 @@ Browser walkthroughs (with the dev server running): `node tests/e2e.mjs out/` an
    | Property | Required | Notes |
    |---|---|---|
    | `ADMIN_PASSWORD` | yes | admin console password (checked server-side) |
-   | `GEMINI_API_KEY` | recommended | from Google AI Studio; without it letters use the standard template |
+   | `MISTRAL_API_KEY` | recommended | see *Enabling Mistral*; without it every letter uses the built-in letter |
    | `APP_URL` | recommended | your public site URL (referral links, WhatsApp messages) |
-   | `GEMINI_MODEL` | optional | default `gemini-2.5-flash` |
+   | `MISTRAL_MODEL`, `MISTRAL_FALLBACK_MODEL`, `AI_COOLDOWN_SEC` | optional | |
    | `MAX_ATTEMPTS`, `REFERRAL_TARGET`, `REFERRAL_REWARD_INR`, `PRICE_INR` | optional | defaults 3 / 5 / 10 / 49 |
    | `SPREADSHEET_ID`, `DRIVE_FOLDER_ID` | auto | created by `setup()` |
-   | `WHATSAPP_PROVIDER` | optional | `link` (default) or `cloud_api` |
-   | `WHATSAPP_CLOUD_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TEMPLATE_NAME` | only for `cloud_api` | |
-4. Run the `setup` function once and accept the permissions. It creates the database spreadsheet and the proofs folder.
-5. Optional: run `seedTestCode` to create `MG-TEST-001` on the real backend.
-6. **Deploy → New deployment → Web app**: *Execute as: Me*, *Who has access: Anyone*. Copy the `/exec` URL.
+   | `WHATSAPP_PROVIDER` (+ `WHATSAPP_CLOUD_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TEMPLATE_NAME`) | optional | `link` (default) or `cloud_api` |
+4. Run `setup` once and accept the permissions. It needs Sheets, Drive and external-request access (for Mistral).
+5. **Deploy → New deployment → Web app**: *Execute as: Me*, *Who has access: Anyone*. Copy the `/exec` URL.
 
 ### 2. Frontend
 Edit `js/config.js`:
 - `apiUrl`: the `/exec` URL. Setting this turns mock mode off.
-- `appUrl`, `support.whatsapp`, and `payment` (`upiId`, `payeeName`, `priceInr`, or a `qrImage` path). A UPI QR is generated automatically if no image is set.
+- `appUrl`, `support.whatsapp`, and `payment` (UPI ID, payee, price, or a QR image).
 - `aurora`: the five background colours.
 
-Then upload the whole folder (including `apps-script/` is harmless; it is only fetched in mock mode) to any static host.
+Upload the folder to any static host. Do **not** upload `.env`.
 
-### 3. Operating it
-- Students pay by UPI, enter their phone number and UTR, and upload a screenshot. They get a request ID.
-- In `/admin.html`: **Requests → Proof → Approve**. This issues a code and gives you a prefilled WhatsApp link to send it.
-- **Codes** tab: create batches (attempts, expiry, note), and disable, enable, reset or edit codes.
-- **Referrals** tab: see progress and mark ₹ rewards as paid.
+### 3. Operating it (admin console: `/admin.html`)
+The admin console works on phone (bottom tabs, cards) and desktop (sidebar, dense table).
+- **Requests:** filter, search, view the proof, then approve (this issues a code and opens a prefilled WhatsApp message) or reject with a quick reason.
+- **Codes:** create batches, then filter, search, disable, enable, reset, or edit attempts and expiry.
+- **Referrals:** progress per referrer; mark ₹ rewards as paid.
 
 ---
 
 ## How it works
 
-**Access & accounting.** The Tokens sheet is the only authority on remaining generations. Every generation is reserved under `LockService` before the Gemini call, keyed by a client-generated idempotency ID. Retries, double taps and refreshes return the original result and never consume twice. Editing, restyling and downloading are free.
+**Access & accounting.** The Tokens sheet is the only authority on remaining generations. Each generation is reserved under `LockService` before the AI call, keyed by an idempotency ID. Retries, double taps and refreshes never consume twice. Editing, restyling and downloading are free.
 
-**Gemini.** `Letters.js` sends only the student's facts and requests structured JSON (`subject`, `salutation`, `paragraphs[]`, `closing`, `signoff`) via `responseSchema`. The output is validated and passed through a fact guard: if it mentions doctors, hospitals, diagnoses or numbers the student never typed, it is rejected. On 429/quota errors, a 90-second cooldown starts and the app falls back to a deterministic letter. There are no endless retries, raw errors are never shown, and the student always gets a letter.
+**Document engine (`js/doc/`).**
+- **One set of font files** is used three ways: registered for the on-screen preview, measured with fontkit for line wrapping, and embedded in full in the PDF.
+- **One layout, two renderers.** The layout produces items positioned in millimetres. `render-svg.js` (preview) and `render-pdf.js` (export) draw the same items, using the same text matrix for glyph rotation and slant.
+- **No silent fallback.** A missing font fails loudly rather than quietly switching to Helvetica.
 
-**Document engine (`js/doc/`).** `fonts.js` loads one set of TTF files. Each file is registered as a browser `FontFace` (preview), measured with fontkit (line wrapping), and embedded in the PDF with pdf-lib. Layout produces positioned items in millimetres, and both `render-svg.js` (preview) and `render-pdf.js` (export) draw those same items. Preview and PDF therefore share line breaks, page breaks and fonts. If a font is missing, export fails loudly; it never falls back to Helvetica. Fonts are embedded in full because pdf-lib's subsetter drops Kalam glyphs.
+**Paper × handwriting.**
+- **5 papers:** Classmate, Black Margin, Legal Pad, Cream, Plain A4.
+- **10 writing styles:** 7 handwriting fonts plus 3 print fonts.
+- The student's paper and handwriting choices are saved with the document.
 
-**Styles.** Notebook (Kalam handwriting on a ruled page, with subtle seeded per-word variation), Academic (Source Serif 4), Modern (Inter), Classic (Libre Baskerville). All are SIL Open Font License; licences are in `assets/fonts/`.
+**Human handwriting (`js/doc/handwriting.js`).** Every letter is placed separately, with per-word and per-glyph variation:
+- **Glyph shape:** size, rotation and slant, so no two "e"s match.
+- **Ink:** pressure changes, and occasional retraced strokes.
+- **Lines:** a slowly wandering baseline and slope, and a ragged left margin.
+- **Fatigue:** the writing gets looser further down the page.
+- **Real slips:** a word written wrong (swapped or dropped letters, or an abandoned half-word), struck through, then rewritten correctly.
 
-**Demo templates.** `js/doc/templates.js` defines fields in millimetres. The backgrounds in `assets/templates/` are generated from that same manifest (`node tools/build-templates.mjs`). The layout always adds the SAMPLE marking (top and bottom bands, diagonal repeats, and an issuer note); there is no option to remove it. No signatures, seals, registration numbers or practitioner identities exist anywhere. To use your own background, swap the image path and tune the coordinates with `?dev=1`.
+All of it is seeded per document, so the preview and the PDF are identical. In the studio, **Neat / Natural / Rushed** controls how strong the effect is; Neat has no slips. Facts (names, dates, numbers) are never "misspelled".
+
+**Demo templates.** Fields come from a millimetre manifest (`js/doc/templates.js`). The fictional backgrounds are generated from it (`node tools/build-templates.mjs`). Every page always carries the SAMPLE marking. There are no signatures, seals, registration numbers or practitioner identities.
+
+> **Not included:** a tool for overlaying text onto the supplied hospital letterhead (`Temp/image1.png`). It carries a real hospital's name, real doctors' registration numbers and a doctor's actual signature and stamp. Filling it would produce documents that look genuinely issued by that doctor. The image is git-ignored and not used.
 
 ## Project layout
 ```
@@ -86,15 +148,19 @@ index.html, admin.html, css/, assets/ (brand, fonts, templates), vendor/ (pdf-li
 js/config.js            all public configuration
 js/core/                api client, session, state, dom, haptics
 js/ui/                  aurora background, sheets, toasts, icons
-js/views/               landing, access, home, wizards, studio, history, referral
-js/doc/                 fonts, styles, layouts, SVG + PDF renderers, templates
-js/mock/                in-browser Apps Script runtime + mock Gemini
-apps-script/            backend (Router, Tokens, Generations, Letters, Requests, Referrals, Admin, Drive, Messaging, Sheets, Setup)
+js/views/               landing, access, home, wizards (tone grid), studio, history, referral, dev font lab
+js/doc/                 fonts, papers & writing styles, handwriting humaniser, layouts, SVG + PDF renderers, templates
+js/mock/                in-browser Apps Script runtime + mock Mistral
+apps-script/            backend (Router, Tokens, Generations, Letters (Mistral), Requests, Referrals, Admin, Drive, Messaging, Sheets, Setup)
 tests/                  node tests + Playwright walkthroughs
-tools/                  dev server, template background builder
+tools/                  dev server (+ Mistral proxy), template background builder
 ```
 
 ## Status: real vs. mocked
-- **Fully implemented, tested locally:** wizard, document engine, PDF export with embedded fonts, token accounting, idempotency, fallback, referral rules, admin operations. All of this runs the real backend code in mock mode.
-- **Written for production but not executed against Google here:** the Apps Script deployment itself (Sheets, Drive, LockService, UrlFetch to Gemini), and the WhatsApp Cloud API path. Test these after deploying.
-- **The supplied hospital letterhead is not included.** It carries a real hospital's name and real doctors' registration numbers, so the demo templates use fictional "Sample Health Centre" artwork instead.
+- **Implemented and tested locally:**
+  - wizard, five-tone prompt, handwriting engine, PDF export with embedded fonts
+  - token accounting, idempotency, the two-model fallback chain, fact guard
+  - referral rules, admin operations
+  - All of this runs the real backend code in mock mode, with 34 unit tests and two browser walkthroughs.
+- **Written to Mistral's documented API but not called live from this build environment** (its network blocks api.mistral.ai): the real Mistral request. Test it with your key via `.env` + `npm run dev`, or after deploying.
+- **Not executed against Google here:** the Apps Script deployment itself, and the WhatsApp Cloud API path.

@@ -1,6 +1,6 @@
 /**
  * Medico Gen — public frontend configuration. Everything a deployer normally changes is here.
- * Nothing secret belongs in this file: the Gemini key, admin password, spreadsheet and Drive ids
+ * Nothing secret belongs in this file: the Mistral API key, admin password, spreadsheet and Drive ids
  * live in Apps Script → Project Settings → Script Properties.
  */
 export const CONFIG = {

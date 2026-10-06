@@ -14,7 +14,7 @@ function setup() {
   proofFolder_();
   Logger.log('Medico Gen is set up. Spreadsheet: ' + props.getProperty('SPREADSHEET_ID') + ', proofs folder: ' + props.getProperty('DRIVE_FOLDER_ID'));
   if (!props.getProperty('ADMIN_PASSWORD')) Logger.log('Set the ADMIN_PASSWORD script property before using the admin console.');
-  if (!props.getProperty('GEMINI_API_KEY')) Logger.log('GEMINI_API_KEY is not set: letters will use the standard template.');
+  if (!props.getProperty('MISTRAL_API_KEY')) Logger.log('MISTRAL_API_KEY is not set: letters will use the built-in standard letter.');
 }
 
 /** Optional: creates the shared test code MG-TEST-001 (3 attempts). Do not run on a public deployment you don't want tested. */

@@ -7,7 +7,7 @@ import { h } from '../core/dom.js';
 import { iconEl } from '../ui/icons.js';
 
 const STAGES = {
-  letter: ['Sending your details securely', 'Writing your letter with Gemini', 'Checking it uses only your facts', 'Setting it on the page'],
+  letter: ['Sending your details securely', 'Writing your letter with Mistral AI', 'Checking it uses only your facts', 'Setting it on the page'],
   demo: ['Saving your details', 'Placing fields on the template', 'Adding the sample marking']
 };
 

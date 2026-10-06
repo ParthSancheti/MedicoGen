@@ -2,7 +2,7 @@
  * Browser document engine. One structured document → one layout → two views (SVG preview, PDF).
  */
 import { FontRegistry } from './fonts.js';
-import { styleFonts, WRITING, PAPERS } from './styles.js';
+import { styleFonts, WRITING_ORDER } from './styles.js';
 import { layoutLetter } from './letter-layout.js';
 import { layoutTemplate, templateFonts } from './template-layout.js';
 import { TEMPLATES } from './templates.js';
@@ -71,7 +71,7 @@ export async function layoutDocument(doc, { dev = false } = {}) {
   const reg = await getRegistry();
   await reg.ensure(fontsFor(doc));
   if (doc.kind === 'demo') return layoutTemplate({ templateId: doc.templateId, fields: doc.fields || {}, registry: reg, dev });
-  return layoutLetter({ input: doc.input, content: doc.content, paperId: doc.paper || 'classmate', writingId: doc.writing || 'kalam', registry: reg, seed: doc.id || 'preview' });
+  return layoutLetter({ input: doc.input, content: doc.content, paperId: doc.paper || 'classmate', writingId: doc.writing || 'kalam', registry: reg, seed: doc.id || 'preview', humanize: doc.humanize || 'natural' });
 }
 
 export function pagesToSvg(pages, opts) {
@@ -104,6 +104,6 @@ export async function exportPdf(doc) {
 
 export async function fontDiagnostics() {
   const reg = await getRegistry();
-  await reg.ensure(Object.values(STYLES).flatMap(styleFonts).concat(templateFonts()));
+  await reg.ensure(WRITING_ORDER.flatMap(styleFonts).concat(templateFonts()));
   return reg.diagnostics();
 }

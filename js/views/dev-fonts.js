@@ -19,7 +19,7 @@ export async function render(root, { navigate }) {
 
   const scaleInput = h('input.input', { type: 'number', step: '0.1', value: '1.2', style: { width: '80px' } });
 
-  const testBtn = h('button.btn.secondary', { type: 'button' }, 'Test Gemini');
+  const testBtn = h('button.btn.secondary', { type: 'button' }, 'Check Mistral');
   const testRes = h('span.subtle', { style: { fontSize: '13px', alignSelf: 'center' } });
 
   controls.append(
@@ -63,22 +63,19 @@ export async function render(root, { navigate }) {
   wSelect.addEventListener('change', draw);
   scaleInput.addEventListener('input', draw);
 
+  // Health check only: never calls letter.generate, so it never uses up a generation.
   testBtn.addEventListener('click', async () => {
     testBtn.disabled = true;
-    testRes.textContent = 'Testing...';
+    testRes.textContent = 'Checking\u2026';
     try {
-      const { api, isMock, newRequestId } = await import('../core/api.js');
-      const { session } = await import('../core/session.js');
-      const data = {
-        letterType: 'absence', date: '2026-10-05', tone: 'formal',
-        student: { name: 'Test', college: 'Test', department: 'Test', year: 'First', division: 'A', rollNo: '1' },
-        absence: { from: '2026-10-01', to: '2026-10-02', reasonCategory: 'illness', reason: 'sick' },
-        recipient: { designation: 'HOD' }
-      };
-      // For testing without a real code, we use a placeholder that the mock DB usually ignores, or we rely on session.code
-      const res = await api('letter.generate', { code: session.code || 'TEST-123', generationId: newRequestId('gen'), input: data });
-      if (isMock) testRes.textContent = `Mock (local): ${res.generation.source}`;
-      else testRes.textContent = `Live backend: ${res.generation.source}`;
+      const { api, isMock } = await import('../core/api.js');
+      if (isMock) {
+        const r = await fetch('/api/mistral/health').then((x) => x.json()).catch(() => null);
+        testRes.textContent = r && r.status === 'ok' ? `Mock + real Mistral via dev proxy (${r.model})` : 'Mock: no MISTRAL_API_KEY in .env, using the local composer';
+      } else {
+        const { config } = await api('config.get');
+        testRes.textContent = config.aiConfigured ? `Live backend: Mistral key set (${config.aiModel})` : 'Live backend: MISTRAL_API_KEY missing, standard letters only';
+      }
     } catch (e) {
       testRes.textContent = 'Error: ' + e.message;
     }

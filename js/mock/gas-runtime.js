@@ -4,11 +4,12 @@
  * Mock mode runs the REAL backend source (apps-script/*.js) against these shims, so the token
  * accounting, idempotency, referral rules and admin operations you test locally are the same code
  * that runs on Apps Script. Only the outside world is simulated: Sheets/Drive/Cache live in a
- * JSON state object, and UrlFetchApp answers Gemini calls with a local composer.
+ * JSON state object. UrlFetchApp sends Mistral calls to the local dev proxy (/api/mistral, real
+ * key from .env) when it is available, and otherwise answers with a local composer.
  *
  * Works in the browser and in Node (tests).
  */
-import { mockGeminiResponse } from './mock-gemini.js';
+import { mockMistralResponse } from './mock-mistral.js';
 
 /* ---------- synchronous SHA-256 (Utilities.computeDigest is synchronous) ---------- */
 const K = new Uint32Array([
@@ -68,6 +69,8 @@ function uuid() {
 export function emptyState() {
   return { props: {}, sheets: {}, files: {}, cache: {} };
 }
+
+let proxyReady = null; // is the dev server's /api/mistral proxy available with a key?
 
 export function createRuntime(state, hooks = {}) {
   const save = () => hooks.onChange && hooks.onChange(state);
@@ -166,17 +169,27 @@ export function createRuntime(state, hooks = {}) {
     },
     UrlFetchApp: {
       fetch: (url, opts = {}) => {
-        if (String(url).includes('generativelanguage.googleapis.com')) {
-          const mode = state.props.MOCK_GEMINI || 'ok';
-          if (mode !== 'ok') return mockGeminiResponse(mode, JSON.parse(opts.payload || '{}'));
+        if (String(url).includes('api.mistral.ai')) {
+          const mode = state.props.MOCK_AI || 'ok';
+          const request = JSON.parse(opts.payload || '{}');
+          if (mode !== 'ok') return mockMistralResponse(mode, request);
+          // Real Mistral through the local dev server (key stays in .env, never in the browser).
           try {
+            if (proxyReady === null) {
+              const probe = new XMLHttpRequest();
+              probe.open('GET', '/api/mistral/health', false);
+              probe.send();
+              proxyReady = probe.status === 200 && /"keyConfigured":true/.test(probe.responseText);
+            }
+            if (!proxyReady) throw new Error('no proxy/key');
             const xhr = new XMLHttpRequest();
-            xhr.open('POST', '/api/gemini', false);
+            xhr.open('POST', '/api/mistral', false); // UrlFetchApp is synchronous, so this must be too
             xhr.setRequestHeader('Content-Type', 'application/json');
             xhr.send(opts.payload || '{}');
+            if (xhr.status === 404 || (xhr.status === 503 && /MISTRAL_API_KEY/.test(xhr.responseText))) throw new Error('no proxy/key');
             return { getResponseCode: () => xhr.status, getContentText: () => xhr.responseText };
-          } catch (e) {
-            return mockGeminiResponse('ok', JSON.parse(opts.payload || '{}'));
+          } catch {
+            return mockMistralResponse('ok', request); // static hosting or Node tests: local composer
           }
         }
         if (String(url).includes('graph.facebook.com')) return { getResponseCode: () => 500, getContentText: () => 'mock: no WhatsApp API' };

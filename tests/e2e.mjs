@@ -10,6 +10,17 @@ const errors = [];
 const log = (...a) => console.log('·', ...a);
 const shot = (page, name) => page.screenshot({ path: `${out}/${name}.png`, fullPage: false });
 const assert = (c, m) => { if (!c) throw new Error('ASSERT: ' + m); };
+// Mobile emulation sometimes mis-scrolls before clicking a position:fixed bar; the button is verified
+// topmost via elementFromPoint, then clicked directly if the normal click can't settle.
+async function tapContinue(page) {
+  const btn = page.locator('.action-bar .btn.primary');
+  try { await btn.click({ timeout: 4000 }); }
+  catch {
+    const top = await btn.evaluate((b) => { const r = b.getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('.action-bar') !== null; });
+    if (!top) throw new Error('Continue button is covered');
+    await btn.dispatchEvent('click');
+  }
+}
 
 const browser = await chromium.launch();
 
@@ -29,14 +40,14 @@ async function fillLetterWizard(page, { name = 'Aarav Patil', college = 'Governm
   await page.getByRole('button', { name: 'Third Year' }).click();
   await page.getByLabel('Division').fill('B');
   await page.getByLabel('Roll no.').fill('42');
-  await page.getByRole('button', { name: /Continue/ }).click();
+  await tapContinue(page);
   await page.getByLabel('From date').fill('2026-09-12');
   await page.getByLabel('To date').fill('2026-09-14');
   await page.getByRole('button', { name: 'Illness' }).click();
   await page.getByLabel('Reason in your words').fill(longText ? (reason + '. ').repeat(5).slice(0, 395) : reason);
-  await page.getByRole('button', { name: /Continue/ }).click();
+  await tapContinue(page);
   if (longText) await page.getByLabel('Name').fill('Prof. Dr. Rajendra Krishnamurthy Venkataraghavan Subramaniam');
-  await page.getByRole('button', { name: /Continue/ }).click();
+  await tapContinue(page);
 }
 
 try {
@@ -78,7 +89,7 @@ try {
   await page.waitForSelector('.wizard');
   await shot(page, '05-wizard-type');
   await page.getByRole('button', { name: /Absence already taken/ }).click();
-  await page.getByRole('button', { name: /Continue/ }).click(); // empty → validation
+  await tapContinue(page); // empty → validation
   await page.waitForSelector('.err:not(:empty)');
   await shot(page, '06-wizard-validation');
   // refresh mid-wizard → draft restore
@@ -93,23 +104,34 @@ try {
   await page.getByRole('button', { name: 'Third Year' }).click();
   await page.getByLabel('Division').fill('B');
   await page.getByLabel('Roll no.').fill('42');
-  await page.getByRole('button', { name: /Continue/ }).click();
+  await tapContinue(page);
   await page.getByLabel('From date').fill('2026-09-12');
   await page.getByLabel('To date').fill('2026-09-14');
   await page.getByRole('button', { name: 'Illness' }).click();
   await page.getByRole('button', { name: 'I had high fever' }).click();
   await page.getByRole('button', { name: 'and was advised rest at home' }).click();
   await shot(page, '07-wizard-absence');
-  await page.getByRole('button', { name: /Continue/ }).click();
+  await tapContinue(page);
   await page.getByRole('button', { name: 'Prof.' }).click();
   await page.getByLabel('Name').fill('Prof. R. K. Sharma');
   await shot(page, '08-wizard-recipient');
-  await page.getByRole('button', { name: /Continue/ }).click();
+  await tapContinue(page);
+  // tone: five emoji tiles
+  await page.waitForSelector('.tone-tile');
+  assert(await page.locator('.tone-tile').count() === 5, 'five tones');
+  await page.getByRole('radio', { name: 'Warm' }).click();
+  await shot(page, '09-wizard-tone');
+  await tapContinue(page);
+  // handwriting
   await page.waitForSelector('.style-card .preview svg');
-  await page.waitForTimeout(500);
-  await shot(page, '09-wizard-style');
-  await page.getByRole('button', { name: /Notebook/ }).click();
-  await page.getByRole('button', { name: /Continue/ }).click();
+  await page.waitForTimeout(600);
+  await shot(page, '09b-wizard-writing');
+  await page.locator('.style-card', { hasText: 'Caveat' }).click();
+  await tapContinue(page);
+  // paper
+  await page.waitForSelector('.style-card .preview svg');
+  await page.locator('.style-card', { hasText: 'Classmate' }).click();
+  await tapContinue(page);
   await shot(page, '10-wizard-review');
   // double tap on generate
   const gen = page.getByRole('button', { name: /Write my letter/ });
@@ -132,9 +154,10 @@ try {
   assert((await page.textContent('#allowance')).includes('2 left'), 'edit is free');
 
   // switch style → classic, export
-  await page.getByRole('radio', { name: /Academic/ }).click();
+  await page.getByRole('radio', { name: 'Rushed' }).click();
   await page.waitForTimeout(500);
-  await page.getByRole('radio', { name: /Notebook/ }).click();
+  await shot(page, '13b-studio-rushed');
+  await page.getByRole('radio', { name: 'Natural' }).click();
   await page.waitForTimeout(500);
   const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('.studio-actions .btn.primary').click()]);
   const path = `${out}/letter-notebook.pdf`;
@@ -152,13 +175,13 @@ try {
   await page.waitForSelector('.template-card');
   await shot(page, '15-demo-pick');
   await page.getByRole('button', { name: /Rest advice note/ }).click();
-  await page.getByRole('button', { name: /Continue/ }).click();
+  await tapContinue(page);
   await page.getByLabel('Name').fill('Aarav Patil');
   await page.getByLabel('Rest from').fill('2026-09-12');
   await page.getByLabel('Until').fill('2026-09-14');
   await page.getByLabel('Remarks').fill('Rest at home advised for three days.');
   await shot(page, '16-demo-details');
-  await page.getByRole('button', { name: /Continue/ }).click();
+  await tapContinue(page);
   await page.getByRole('button', { name: /Create sample/ }).click();
   await page.waitForSelector('.err:not(:empty)'); // acknowledgement required
   await page.locator('label.row input[type=checkbox]').check();
@@ -172,10 +195,10 @@ try {
   await page.getByRole('button', { name: 'Done' }).click();
 
   // third generation via mock 429 → fallback, then exhausted
-  await page.goto(BASE + '?gemini=429#/letter');
+  await page.goto(BASE + '?ai=429#/letter');
   await page.waitForSelector('.wizard');
   await fillLetterWizard(page, { longText: true, name: 'Aaravkumar Sanjayrao Patil-Deshmukh', college: 'Shri Guru Gobind Singhji Institute of Engineering and Technology, Vishnupuri, Nanded, Maharashtra' });
-  await page.getByRole('button', { name: /Continue/ }).click();
+  for (let i = 0; i < 3; i++) { await tapContinue(page); await page.waitForTimeout(250); } // tone, writing, paper
   await page.getByRole('button', { name: /Write my letter/ }).click();
   await page.waitForSelector('.page-frame svg', { timeout: 20000 });
   await page.waitForTimeout(800);

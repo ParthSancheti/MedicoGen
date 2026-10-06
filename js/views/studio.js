@@ -1,7 +1,7 @@
 /**
  * Document studio. The page you see is the page you export: both come from the same layout.
  * Editing and restyling are local + saved to the backend for free; only "Write a new version"
- * calls Gemini and uses a generation.
+ * calls the AI (Mistral) and uses a generation.
  */
 import { api } from '../core/api.js';
 import { session } from '../core/session.js';
@@ -17,7 +17,6 @@ import { toDoc, docTitle } from './common.js';
 import { generate } from './generate.js';
 
 const dev = new URLSearchParams(location.search).get('dev') === '1';
-const STYLE_GLYPH = { notebook: 'Aa', academic: 'Aa', modern: 'Aa', classic: 'Aa' };
 
 export async function render(root, { param, navigate }) {
   let gen = app.docs.get(param);
@@ -38,6 +37,8 @@ export async function render(root, { param, navigate }) {
   const fresh = (() => { try { const f = JSON.parse(sessionStorage.getItem('mg.fresh') || 'null'); if (f && f.id === gen.id) { sessionStorage.removeItem('mg.fresh'); return f; } } catch { /* ignore */ } return null; })();
   let doc = toDoc(gen);
   const isDemo = doc.kind === 'demo';
+  const humanKey = 'mg.human.' + gen.id;
+  try { doc.humanize = localStorage.getItem(humanKey) || 'natural'; } catch { doc.humanize = 'natural'; }
   let zoom = 1;
 
   /* ---------- layout ---------- */
@@ -65,8 +66,26 @@ export async function render(root, { param, navigate }) {
     isDemo ? h('span') : h('button.btn.secondary', { type: 'button', 'aria-label': 'More', onclick: () => openMore() }, iconEl('more', 20)),
     exportBtn));
 
-  const main = h('div.stack', { style: { gap: '12px', minWidth: 0 } }, 
-    warnEl, zoomCtl, pagesEl);
+  // How human the handwriting looks: neat (no slips) → natural → rushed (more wobble and slips).
+  const humanCtl = h('div.segmented.human-ctl', { role: 'radiogroup', 'aria-label': 'Handwriting realism' });
+  const renderHuman = () => {
+    humanCtl.hidden = isDemo || WRITING[doc.writing || 'kalam'].type !== 'hand';
+    fill(humanCtl, ...[['neat', 'Neat'], ['natural', 'Natural'], ['rushed', 'Rushed']].map(([v, l]) => {
+      const b = h('button' + (doc.humanize === v ? '.on' : ''), { type: 'button', role: 'radio', 'aria-checked': String(doc.humanize === v) }, l);
+      b.addEventListener('click', () => {
+        if (doc.humanize === v) return;
+        haptic('select');
+        doc = { ...doc, humanize: v };
+        try { localStorage.setItem(humanKey, v); } catch { /* per-device preference */ }
+        renderHuman(); draw();
+      });
+      return b;
+    }));
+  };
+  renderHuman();
+
+  const main = h('div.stack', { style: { gap: '12px', minWidth: 0 } },
+    warnEl, humanCtl, zoomCtl, pagesEl);
   root.append(h('div.studio-wrap', h('div.stack', { style: { minWidth: 0 } }, head, main), side));
   document.body.append(actions);
 
@@ -81,7 +100,7 @@ export async function render(root, { param, navigate }) {
     if (isDemo) headBadges.append(h('span.badge.danger', 'Sample · demonstration only'), h('span.badge.neutral', TEMPLATES[doc.templateId].name));
     else {
       headBadges.append(h('span.badge', PAPERS[doc.paper || 'classmate'].name), h('span.badge', WRITING[doc.writing || 'kalam'].name));
-      headBadges.append(gen.source === 'gemini' ? h('span.badge.success', iconEl('sparkle', 13), 'Written with Gemini') : h('span.badge.neutral', 'Standard template'));
+      headBadges.append(gen.source === 'mistral' ? h('span.badge.success', iconEl('sparkle', 13), 'AI-written') : h('span.badge.neutral', 'Standard template'));
       if (gen.source === 'mock') headBadges.append(h('span.badge.warn', 'Mock'));
     }
     headBadges.append(saveState);
@@ -145,7 +164,7 @@ export async function render(root, { param, navigate }) {
       const { pages } = await layoutDocument(previewDoc);
       host.innerHTML = pagesToSvg([pages[0]])[0];
       const svg = host.querySelector('svg');
-      if (svg) svg.setAttribute('viewBox', '0 30 210 50');
+      if (svg) { svg.setAttribute('viewBox', '18 58 122 106'); svg.setAttribute('preserveAspectRatio', 'xMinYMin slice'); }
     } catch { /* preview optional */ }
   }
 
@@ -166,7 +185,7 @@ export async function render(root, { param, navigate }) {
     doc = { ...doc, writing: id };
     gen.writing = id;
     session.lastWriting = id;
-    renderPickers(); renderSide(); badges();
+    renderPickers(); renderSide(); badges(); renderHuman();
     await draw();
     persist({ writing: id });
   }
@@ -199,7 +218,7 @@ export async function render(root, { param, navigate }) {
     saveState.textContent = 'Saving…';
     try {
       const res = await api('document.save', { code: session.code, generationId: gen.id, ...patch });
-      Object.assign(gen, { style: res.generation.style, content: res.generation.content, input: res.generation.input });
+      Object.assign(gen, { style: res.generation.style, paper: res.generation.paper, writing: res.generation.writing, content: res.generation.content, input: res.generation.input });
       app.remember(gen);
       saveState.textContent = 'Saved';
       setTimeout(() => { if (saveState.textContent === 'Saved') saveState.textContent = ''; }, 1600);
@@ -319,7 +338,7 @@ export async function render(root, { param, navigate }) {
   async function regenerate() {
     const left = app.token.remaining;
     if (!left) { toast('No generations left on this code.', { tone: 'error' }); return; }
-    const ok = await confirmSheet({ title: 'Write a new version?', message: `Gemini will write a fresh letter from the same details. This uses 1 generation (${left} left). Your current version stays in History.`, confirm: 'Write new version' });
+    const ok = await confirmSheet({ title: 'Write a new version?', message: `Mistral AI will write a fresh letter from the same details. This uses 1 generation (${left} left). Your current version stays in History.`, confirm: 'Write new version' });
     if (!ok) return;
     const data = {};
     const res = await generate({ action: 'letter.generate', kind: 'letter', data, saveDraft: () => {}, params: { paper: doc.paper, writing: doc.writing, input: doc.input } });
@@ -385,7 +404,7 @@ export async function render(root, { param, navigate }) {
     return box;
   }
 
-  renderStyles();
+  renderPickers();
   renderSide();
   badges();
   await draw({ reveal: !!fresh });

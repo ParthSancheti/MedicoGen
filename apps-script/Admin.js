@@ -40,14 +40,14 @@ function apiAdminStats_() {
     codesTotal: tokens.length,
     generationsUsed: tokens.reduce(function (n, t) { return n + toInt_(t.attemptsUsed, 0); }, 0),
     generationsToday: gens.filter(function (g) { return new Date(new Date(g.createdAt).getTime() + 5.5 * 3600000).toISOString().slice(0, 10) === today; }).length,
-    aiGenerations: gens.filter(function (g) { return g.source === 'gemini'; }).length,
+    aiGenerations: gens.filter(function (g) { return g.source === 'mistral'; }).length,
     fallbackGenerations: gens.filter(function (g) { return g.source === 'fallback'; }).length,
     requestsPending: requests.filter(function (r) { return r.status === 'pending'; }).length,
     requestsApproved: requests.filter(function (r) { return r.status === 'approved'; }).length,
     referralsVerified: refs.filter(function (r) { return r.status === 'verified'; }).length,
     referralsPending: refs.filter(function (r) { return r.status === 'pending'; }).length,
     rewardsUnpaid: rewards.filter(function (r) { return r.status === 'earned'; }).length,
-    aiConfigured: !!secret_('GEMINI_API_KEY', true),
+    aiConfigured: !!secret_('MISTRAL_API_KEY', true),
     mock: isMock_()
   };
 }

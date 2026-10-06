@@ -1,29 +1,101 @@
-/* Medico Gen admin console — same design system, denser operational layout. */
-.admin-shell { max-width: 1180px; margin: 0 auto; padding: calc(10px + var(--safe-t)) var(--gutter) 60px; display: flex; flex-direction: column; gap: 18px; }
-.admin-top { position: sticky; top: 8px; z-index: 20; display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 12px; border-radius: 22px; flex-wrap: wrap; }
-.admin-top .tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; flex: 1; min-width: 0; }
-.admin-top .tabs button { flex: none; height: 42px; padding: 0 16px; border-radius: 999px; border: 0; background: transparent; font-weight: 700; color: var(--ink-2); }
-.admin-top .tabs button.on { background: var(--ink); color: #fff; }
-.admin-top .tabs .count { margin-left: 6px; font-size: 12px; padding: 2px 7px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
-.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
-.stat { padding: 16px 18px; }
-.stat b { display: block; font-size: 30px; font-weight: 800; letter-spacing: -0.04em; }
-.stat span { font-size: 13px; color: var(--ink-3); font-weight: 600; }
-.rows { display: grid; gap: 10px; }
-.req { display: grid; gap: 12px; padding: 16px; }
-.req .top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.req .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 16px; font-size: 14px; }
-.req .kv span { display: block; color: var(--ink-3); font-size: 12px; font-weight: 600; }
-.req .kv b { font-weight: 700; overflow-wrap: anywhere; }
-.req .acts { display: flex; gap: 8px; flex-wrap: wrap; }
-.table-wrap { overflow-x: auto; border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow-1); }
-table.data { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 760px; }
-table.data th { text-align: left; font-size: 12px; color: var(--ink-3); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 12px 14px; border-bottom: 1px solid var(--line); }
-table.data td { padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-table.data tr:last-child td { border-bottom: 0; }
-table.data .actions { display: flex; gap: 6px; justify-content: flex-end; }
-.btn.xs { --h: 34px; padding: 0 12px; font-size: 13px; }
-.proof-img { width: 100%; max-height: 70vh; object-fit: contain; border-radius: 16px; background: #fff; box-shadow: inset 0 0 0 1px var(--line); }
-.codes-out { font: 700 15px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; padding: 14px; border-radius: 14px; background: var(--surface-sunk); }
+/* Medico Gen admin console. Phones: top bar + bottom tabs + cards. Desktop: sidebar + dense rows. */
 .login { min-height: 100svh; display: grid; place-items: center; padding: var(--gutter); }
 .login .card { width: min(420px, 100%); }
+
+.adm { min-height: 100svh; }
+.adm-main { width: 100%; max-width: 1180px; margin: 0 auto; padding: 12px var(--gutter) calc(110px + var(--safe-b)); display: flex; flex-direction: column; gap: 16px; }
+.adm-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 4px; }
+.adm-title { font-size: clamp(24px, 6vw, 32px); font-weight: 800; letter-spacing: -0.025em; }
+.adm-actions { display: flex; gap: 8px; }
+.adm-view { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+/* mobile chrome */
+.adm-mhead { position: sticky; top: calc(8px + var(--safe-t)); z-index: 20; margin: calc(8px + var(--safe-t)) var(--gutter) 0; display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 6px 0 10px; border-radius: 999px; }
+.adm-mhead img { width: 32px; height: 32px; border-radius: 10px; }
+.adm-bottom { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(12px + var(--safe-b)); z-index: 30; display: flex; gap: 2px; padding: 6px; border-radius: 999px; width: min(440px, calc(100% - 24px)); }
+.adm-nav-item { position: relative; display: flex; align-items: center; gap: 12px; border: 0; background: transparent; color: var(--ink-2); font-weight: 700; font-size: 15px; border-radius: 14px; padding: 0 14px; min-height: 46px; text-align: left; transition: background .2s, color .2s; }
+.adm-nav-item:hover { background: rgba(255,255,255,.7); }
+.adm-nav-item.on { background: var(--ink); color: #fff; }
+.adm-nav-item.mini { flex: 1; flex-direction: column; justify-content: center; gap: 2px; min-height: 56px; padding: 0; border-radius: 999px; font-size: 11.5px; }
+.adm-nav-item.mini.on { background: var(--accent-soft); color: var(--accent); }
+.adm-count { margin-left: auto; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; display: grid; place-items: center; font-size: 12px; font-weight: 800; background: var(--warn); color: #fff; }
+.adm-nav-item.mini .adm-count { position: absolute; top: 4px; right: calc(50% - 22px); margin: 0; min-width: 18px; height: 18px; font-size: 11px; padding: 0 5px; }
+.adm-side { display: none; }
+
+/* stats */
+.adm-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.adm-stat { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 16px; border: 0; text-align: left; transition: transform .2s var(--ease), box-shadow .2s; }
+button.adm-stat:hover { box-shadow: var(--shadow-2); }
+button.adm-stat:active { transform: scale(.98); }
+.adm-stat b { font-size: 30px; font-weight: 800; letter-spacing: -0.04em; line-height: 1; }
+.adm-stat > span:last-child { font-size: 13px; color: var(--ink-3); font-weight: 600; }
+.adm-stat-ic { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; }
+.tone-accent { background: var(--accent-soft); color: var(--accent); }
+.tone-success { background: var(--success-soft); color: var(--success); }
+.tone-warn { background: var(--warn-soft); color: var(--warn); }
+.tone-neutral { background: rgba(17,30,60,.06); color: var(--ink-2); }
+.adm-quick { display: flex; flex-direction: column; gap: 12px; }
+.adm-quick-grid { display: grid; gap: 10px; }
+
+/* toolbar */
+.adm-toolbar { display: flex; flex-direction: column; gap: 10px; }
+.adm-filter { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.adm-filter::-webkit-scrollbar { display: none; }
+.adm-search { min-height: 48px; padding: 10px 16px; font-size: 16px; background: rgba(255,255,255,.85); }
+
+/* lists */
+.adm-list { display: grid; gap: 10px; }
+.adm-req { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+.adm-req-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.adm-req-top .subtle { margin-left: auto; }
+.adm-kv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; margin: 0; font-size: 14px; }
+.adm-kv dt { color: var(--ink-3); font-size: 12px; font-weight: 600; }
+.adm-kv dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+.adm-kv dd a { color: inherit; }
+.adm-kv .wide { grid-column: 1 / -1; }
+.adm-req-acts { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; }
+.adm-req-acts .btn { width: 100%; }
+.btn.xs { --h: 34px; padding: 0 12px; font-size: 13px; }
+
+/* codes: card on phones, row on desktop */
+.adm-code { display: grid; grid-template-columns: 1fr auto; gap: 10px 12px; padding: 14px 16px; align-items: center; }
+.adm-code-head { display: none; }
+.adm-code-id { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.adm-code-id .btn { padding: 0 6px; margin-left: -6px; font-size: 15px; }
+.adm-meter { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; min-width: 70px; }
+.adm-meter i { display: block; width: 70px; height: 6px; border-radius: 3px; background: rgba(17,30,60,.08); overflow: hidden; }
+.adm-meter i span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.adm-k { color: var(--ink-3); }
+.adm-code-acts { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.adm-code-acts .btn { width: 100%; }
+.adm-code > div:nth-child(3), .adm-code > div:nth-child(4), .adm-code > div:nth-child(5), .adm-code > div:nth-child(6) { font-size: 13px; }
+
+.proof-img { width: 100%; max-height: 70vh; object-fit: contain; border-radius: 16px; background: #fff; box-shadow: inset 0 0 0 1px var(--line); }
+.codes-out { font: 700 15px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; padding: 14px; border-radius: 14px; background: var(--surface-sunk); max-height: 40vh; overflow: auto; }
+
+@media (min-width: 640px) {
+  .adm-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .adm-quick-grid { grid-template-columns: repeat(3, auto); justify-content: start; }
+  .adm-toolbar { flex-direction: row; align-items: center; justify-content: space-between; }
+  .adm-search { max-width: 320px; }
+  .adm-list.adm-grid, .adm-list:not(.adm-codes) { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
+  .adm-req-acts { grid-auto-columns: max-content; justify-content: end; }
+}
+
+@media (min-width: 1000px) {
+  .adm { display: grid; grid-template-columns: 250px minmax(0, 1fr); }
+  .adm-mhead, .adm-bottom { display: none; }
+  .adm-side { position: sticky; top: 0; height: 100svh; display: flex; flex-direction: column; gap: 4px; padding: 20px 14px; margin: 0; border-radius: 0 28px 28px 0; border-left: 0; }
+  .adm-side .brand { padding: 4px 8px 14px; }
+  .adm-side-label { padding: 4px 14px 6px; font-size: 11.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+  .adm-main { padding: 28px 36px 48px; }
+  /* codes become a dense table-like list */
+  .adm-codes { gap: 0; border-radius: var(--r-lg); overflow: hidden; background: var(--surface); box-shadow: var(--shadow-1); }
+  .adm-code { grid-template-columns: minmax(160px, 1.5fr) 84px 88px 96px 44px 96px 206px; border-radius: 0; box-shadow: none; background: transparent; border-bottom: 1px solid var(--line); padding: 10px 16px; }
+  .adm-code:last-child { border-bottom: 0; }
+  .adm-code-head { display: grid; font-size: 11.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); padding-top: 14px; }
+  .adm-meter { align-items: flex-start; }
+  .adm-k { display: none; }
+  .adm-code-acts { grid-column: auto; display: flex; justify-content: flex-end; }
+  .adm-code-acts .btn { width: auto; }
+}
